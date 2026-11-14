@@ -8,65 +8,111 @@
   <script src="chart.umd.min.js"></script>
 </head>
 <body>
-  <div id="conn-banner" class="banner" hidden>Connecting to the FlameWatch server… (the free server can take up to a minute to wake up)</div>
-  <header>
-    <h1>FlameWatch</h1>
-    <p>Habitat fire safety from NASA microgravity combustion data</p>
-    <span id="source-badge" class="badge">scenario</span>
+  <div id="conn-banner" class="banner" hidden>Waking up the FlameWatch server. The free server can take up to a minute.</div>
+
+  <header class="top">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <span class="name">FlameWatch</span>
+    </div>
+    <p class="tagline">Fire risk for crewed habitats, checked against NASA’s space station fire experiments</p>
+    <p id="source" class="source">Preset habitat</p>
   </header>
 
-  <main>
-    <!-- 1. Live habitat panel -->
-    <section id="habitat" class="card">
-      <h2>Habitat conditions</h2>
-      <label>Scenario
+  <section class="finding" aria-live="polite">
+    <h1 id="finding">Loading NASA data…</h1>
+  </section>
+
+  <main class="grid">
+    <section class="habitat" aria-label="Habitat conditions">
+      <label class="field">
+        <span>Habitat</span>
         <select id="scenario"></select>
       </label>
-      <div class="readings">
-        <div><span class="k">Oxygen</span><span id="r-o2" class="v">-</span></div>
-        <div><span class="k">Pressure</span><span id="r-p" class="v">-</span></div>
-        <div><span class="k">Smoke</span><span id="r-smoke" class="v">-</span></div>
-        <div><span class="k">Temp</span><span id="r-temp" class="v">-</span></div>
+
+      <dl class="readings">
+        <div><dt>Oxygen</dt><dd><span id="r-o2">–</span><small>%</small></dd></div>
+        <div><dt>Pressure</dt><dd><span id="r-p">–</span><small>psi</small></dd></div>
+        <div><dt>Smoke</dt><dd><span id="r-smoke">–</span><small>/100</small></dd></div>
+        <div><dt>Temperature</dt><dd><span id="r-temp">–</span><small>°C</small></dd></div>
+      </dl>
+
+      <div id="lamp" class="lamp green" role="status">
+        <span id="lamp-word" class="lamp-word">Nominal</span>
+        <span class="lamp-score"><span id="risk-score">0</span> fire risk</span>
       </div>
-      <div id="risk" class="risk green">
-        <div class="risk-label">Fire risk</div>
-        <div id="risk-score" class="risk-score">-</div>
-        <div id="risk-parts" class="risk-parts"></div>
-      </div>
-      <p class="note">Oxygen is simulated with a knob on the sensor box. Smoke, temperature and pressure are real readings.</p>
+
+      <table class="breakdown" aria-label="What adds to the risk">
+        <tr><th>Oxygen-rich air</th><td id="p-atm">0</td></tr>
+        <tr><th>Smoke</th><td id="p-smoke">0</td></tr>
+        <tr><th>Heat</th><td id="p-heat">0</td></tr>
+        <tr><th>Flame</th><td id="p-flame">0</td></tr>
+      </table>
+
+      <p class="note">The sensor box measures smoke, temperature and pressure. Oxygen is set with a dial to simulate the habitat’s air.</p>
     </section>
 
-    <!-- 2. Ranked experiments -->
-    <section id="ranked" class="card wide">
-      <div class="row">
-        <h2>Most relevant NASA experiments</h2>
-        <select id="area">
-          <option value="all">All safety areas</option>
-          <option value="prevention">Prevention</option>
-          <option value="detection">Detection</option>
-          <option value="suppression">Suppression</option>
+    <section class="experiments" aria-label="NASA experiments">
+      <div class="section-head">
+        <h2>NASA experiments that apply here</h2>
+        <select id="area" aria-label="Filter by safety area">
+          <option value="all">Every safety area</option>
+          <option value="prevention">Preventing fires</option>
+          <option value="detection">Detecting smoke</option>
+          <option value="suppression">Putting fires out</option>
         </select>
       </div>
-      <ol id="rank-list"></ol>
+      <table class="exp-table">
+        <thead>
+          <tr><th class="pick"><span class="sr">Compare</span></th><th>Experiment</th><th>Covers</th><th class="num">Runs near you</th><th class="num">Oxygen tested</th></tr>
+        </thead>
+        <tbody id="rank-body"></tbody>
+      </table>
+      <div class="table-foot">
+        <button id="show-all" class="link-btn" type="button">Show all experiments</button>
+        <div class="actions">
+          <a id="dl-near" class="btn-quiet" href="#" download>Download runs near this habitat (CSV)</a>
+          <button id="compare-btn" class="btn" type="button" disabled>Tick up to 3 to compare</button>
+        </div>
+      </div>
     </section>
 
-    <!-- 3. AI chat -->
-    <section id="chat" class="card">
-      <h2>Ask FlameWatch</h2>
-      <div id="chat-log"></div>
+    <section id="compare" class="compare" aria-label="Compare experiments" hidden>
+      <div class="section-head">
+        <h2>Side by side</h2>
+        <button id="compare-close" class="link-btn" type="button">Close</button>
+      </div>
+      <ul id="compare-summary" class="compare-summary"></ul>
+      <div class="compare-scroll"><table id="compare-table" class="compare-table"></table></div>
+    </section>
+
+    <section class="gaps" aria-label="Where NASA has data">
+      <h2>Where NASA has tested, and where it hasn’t</h2>
+      <p class="sub">Every dot is one test run on the space station. The ring is your habitat; the shaded band is the oxygen range planned for Moon bases.</p>
+      <div class="chart-wrap"><canvas id="gap-chart"></canvas></div>
+      <p class="note">No fire data exists yet for lunar gravity. NASA’s FM2 experiment is planned to fly to the Moon in late 2026.</p>
+    </section>
+
+    <section class="ask" aria-label="Ask about this habitat">
+      <h2>Ask about this habitat</h2>
+      <div id="chat-log" class="chat-log">
+        <p class="hint">Answers come only from NASA’s experiment data and name the experiment they rely on.</p>
+        <div class="suggest">
+          <button type="button" class="q">Which materials are riskiest at this oxygen level?</button>
+          <button type="button" class="q">How would a fire spread here compared to Earth?</button>
+          <button type="button" class="q">What should NASA test next for this habitat?</button>
+        </div>
+      </div>
       <form id="chat-form">
-        <input id="chat-input" placeholder="Which materials are riskiest at this oxygen level?" autocomplete="off">
-        <button>Ask</button>
+        <input id="chat-input" placeholder="Type a question" autocomplete="off" aria-label="Your question">
+        <button type="submit">Ask</button>
       </form>
     </section>
-
-    <!-- 4. Knowledge gaps -->
-    <section id="gaps" class="card wide">
-      <h2>Where NASA has data (and where it doesn't)</h2>
-      <canvas id="gap-chart" height="120"></canvas>
-      <p class="note">Each dot is one NASA test run. The star is your habitat. Empty areas near the star are knowledge gaps. No lunar-gravity fire data exists in PSI yet.</p>
-    </section>
   </main>
+
+  <footer>
+    Data from NASA’s <a href="https://psi.nasa.gov/physci/repo/search?q=combustion" target="_blank" rel="noopener">Physical Sciences Informatics</a> repository, 24 combustion investigations. Built for NASA Space Apps 2026, Flame in Freefall.
+  </footer>
 
   <script src="config.js"></script>
   <script src="app.js"></script>

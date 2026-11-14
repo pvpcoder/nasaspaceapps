@@ -12,7 +12,12 @@ printed report and fix any wrong guesses in OVERRIDES below.
 import csv
 import json
 import re
+import sys
+from collections import Counter
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from profiles import PROFILES  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -171,12 +176,64 @@ def clean_table(inv, table_file):
                     "psi_id": inv["id"], "acronym": inv["acronym"], "table": table_file, "row": i,
                     "o2_pct": round(o2, 2) if o2 is not None else "",
                     "pressure_atm": round(p, 3) if p is not None else "",
-                    "airflow_cms": num(rec.get(cols["flow"])) if cols["flow"] else "",
+                    "airflow_cms": flow if (flow := num(rec.get(cols["flow"])) if cols["flow"] else None) is not None and flow >= 0 else "",
                     "fuel": (rec.get(cols["fuel"]) or "").strip() if cols["fuel"] else "",
                     "outcome": (rec.get(cols["outcome"]) or "").strip() if cols["outcome"] else "",
                     "o2_note": "; ".join(notes),
                 })
     return out, cols
+
+
+# Columns that identify a run rather than describe its conditions.
+NOT_A_VARIABLE = re.compile(
+    r"test|#|date|gmt|time|^day|year|month|number|camera|note|comment|identifier|"
+    r"^cir|session|^pi$|frames|gain|^flex|end$|color|ignited|hot ignition|self.?ext|"
+    r"after|final|burn ?time|peak|duration|burning rate|burnrate|length|"
+    r"extinction diameter|tad|zst|tfp|mhc|loss|rt/r0|spread|co2 % by vol|co \(ppm\)|"
+    r"description|cool flame\?", re.I)
+
+
+def describe_variables(inv):
+    """Which conditions changed between runs, and which were held fixed.
+    Values are pooled across all of an investigation's tables first."""
+    values = {}
+    for t in inv["tables"]:
+        rows = list(csv.reader((DATA / "tables" / t["file"]).read_text(errors="replace").splitlines()))
+        if len(rows) < 2:
+            continue
+        headers = [re.sub(r"\s+", " ", h.replace("\ufeff", "")).strip() for h in rows[0]]
+        body = [r for r in rows[1:] if any(c.strip() for c in r)]
+        for j, h in enumerate(headers):
+            if not h or NOT_A_VARIABLE.search(h):
+                continue
+            for r in body:
+                if j < len(r) and r[j].strip():
+                    values.setdefault(h, {})[r[j].strip()] = True
+    varied, fixed = [], []
+    for h, vals in values.items():
+        vals = list(vals)
+        listed = len(vals) == 1 and re.search(r";| - |\bor\b", vals[0])
+        if len(vals) > 1:
+            varied.append(f"{h} ({len(vals)} values)")
+        elif listed:
+            varied.append(f"{h} ({vals[0][:40]})")
+        else:
+            fixed.append(f"{h}: {vals[0][:40]}")
+    return varied[:8], fixed[:6]
+
+
+def summarize(rows):
+    def rng(key):
+        v = [r[key] for r in rows if isinstance(r[key], (int, float))]
+        return [round(min(v), 2), round(max(v), 2)] if v else None
+    fuels = Counter(r["fuel"] for r in rows
+                    if r["fuel"] and len(r["fuel"]) <= 40 and "data" not in r["fuel"].lower())
+    return {
+        "o2_range": rng("o2_pct"),
+        "pressure_range": rng("pressure_atm"),
+        "airflow_range": rng("airflow_cms"),
+        "samples": [f for f, _ in fuels.most_common(6)],
+    }
 
 
 def main():
@@ -186,13 +243,18 @@ def main():
     for inv in invs:
         tag = TAGS.get(inv["acronym"], DEFAULT_TAG)
         n_rows = 0
+        inv_rows = []
         for t in inv["tables"]:
             rows, cols = clean_table(inv, t["file"])
             all_rows += rows
+            inv_rows += rows
             n_rows += len(rows)
             print(f"{inv['id']:8} {inv['acronym'][:22]:22} {len(rows):4}  "
                   f"{cols.get('o2')} / {cols.get('p')} / {cols.get('flow')}")
-        catalog.append({**inv, **tag, "test_rows": n_rows})
+        varied, fixed = describe_variables(inv)
+        catalog.append({**inv, **tag, **PROFILES.get(inv["id"], {}), **summarize(inv_rows),
+                        "varied": varied, "fixed": fixed,
+                        "test_rows": len({(r["table"], r["row"]) for r in inv_rows})})
 
     with open(DATA / "tests.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS)

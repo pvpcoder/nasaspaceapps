@@ -13,6 +13,7 @@ Endpoints
   POST /api/ask            AI answer grounded in NASA data (needs ANTHROPIC_API_KEY)
 """
 import csv
+import io
 import json
 import os
 import time
@@ -20,6 +21,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -145,7 +147,8 @@ def rank(area: str = "all", limit: int = 30):
         results.append({
             "id": inv["id"], "acronym": inv["acronym"], "title": inv["title"],
             "doi": inv.get("doi"), "url": inv["url"], "areas": inv.get("areas", []),
-            "fuel_kind": inv.get("fuel_kind"), "score": round(score, 1),
+            "fuel_kind": inv.get("fuel_kind"), "crew_relevance": inv.get("crew_relevance", 1),
+            "score": round(score, 1),
             "match": round(best, 2), "tests_total": n_tests, "tests_near": near,
             "o2_range": [min(o2s), max(o2s)] if o2s else None,
             "objectives": (inv.get("objectives") or "")[:400],
@@ -178,8 +181,64 @@ def explain(inv, best, near, area_match):
 @app.get("/api/points")
 def points():
     return [{"id": t["psi_id"], "acronym": t["acronym"], "o2": t["o2_pct"],
-             "p": t["pressure_atm"], "note": t["o2_note"]}
+             "p": t["pressure_atm"], "note": t["o2_note"],
+             "area": (BY_ID.get(t["psi_id"], {}).get("areas") or ["prevention"])[0]}
             for t in TESTS if t["o2_pct"] is not None and t["pressure_atm"] is not None]
+
+# ---------- compare + export ----------
+
+COMPARE_FIELDS = ["id", "acronym", "title", "doi", "url", "project_type", "areas", "hardware",
+                  "fuel", "samples", "measured", "o2_range", "pressure_range", "airflow_range",
+                  "varied", "fixed", "test_rows", "objectives"]
+
+
+@app.get("/api/compare")
+def compare(ids: str):
+    """Side-by-side profiles for up to 3 investigations (comma-separated PSI IDs)."""
+    o2, p_atm = STATE["o2_pct"], STATE["pressure_psi"] / PSI_PER_ATM
+    out = []
+    for pid in [i.strip() for i in ids.split(",") if i.strip()][:3]:
+        inv = BY_ID.get(pid)
+        if not inv:
+            continue
+        tests = [t for t in TESTS if t["psi_id"] == pid]
+        near = {(t["table"], t["row"]) for t in tests if (closeness(t, o2, p_atm) or 0) > 0.5}
+        prof = {k: inv.get(k) for k in COMPARE_FIELDS}
+        prof["hardware"] = prof["hardware"] if isinstance(prof["hardware"], str) else ""
+        prof["objectives"] = (prof["objectives"] or "")[:500]
+        prof["tests_near"] = len(near)
+        out.append(prof)
+    return {"conditions": {"o2_pct": o2, "pressure_atm": round(p_atm, 3)}, "investigations": out}
+
+
+EXPORT_COLUMNS = ["psi_id", "acronym", "doi", "o2_pct", "pressure_atm", "airflow_cms",
+                  "fuel", "outcome", "match_to_habitat", "note", "source_table", "source_row"]
+
+
+@app.get("/api/export")
+def export(scope: str = "near", ids: str = ""):
+    """Download NASA test runs as CSV.
+    scope=near: runs close to the current habitat (all experiments)
+    scope=ids:  every run from the listed experiments (comma-separated PSI IDs)"""
+    o2, p_atm = STATE["o2_pct"], STATE["pressure_psi"] / PSI_PER_ATM
+    wanted = {i.strip() for i in ids.split(",") if i.strip()}
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(EXPORT_COLUMNS)
+    for t in TESTS:
+        match = closeness(t, o2, p_atm)
+        if scope == "near" and (match is None or match <= 0.5):
+            continue
+        if scope == "ids" and t["psi_id"] not in wanted:
+            continue
+        w.writerow([t["psi_id"], t["acronym"], BY_ID.get(t["psi_id"], {}).get("doi", ""),
+                    t["o2_pct"], t["pressure_atm"], t["airflow_cms"], t["fuel"], t["outcome"],
+                    "" if match is None else round(match, 2), t["o2_note"], t["table"], t["row"]])
+    name = (f"flamewatch_runs_near_{round(o2)}pct_{STATE['pressure_psi']:.1f}psi.csv" if scope == "near"
+            else f"flamewatch_runs_{'_'.join(sorted(wanted)) or 'none'}.csv")
+    return Response(buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
 
 # ---------- AI ----------
 
@@ -230,9 +289,13 @@ def ask(q: Question):
     client = anthropic.Anthropic(api_key=key)
     msg = client.messages.create(
         model=os.environ.get("FLAMEWATCH_MODEL", "claude-sonnet-5-5"),
-        max_tokens=600, system=SYSTEM,
+        max_tokens=2000, system=SYSTEM,
         messages=[{"role": "user", "content": prompt}])
-    return {"answer": msg.content[0].text, "sources": [r["id"] for r in top]}
+    # The reply can contain thinking blocks before the answer; keep only the text.
+    answer = "\n".join(b.text for b in msg.content if getattr(b, "type", "") == "text").strip()
+    if not answer:
+        answer = "The AI didn't return an answer. Try asking again."
+    return {"answer": answer, "sources": [r["id"] for r in top]}
 
 # ---------- frontend ----------
 
