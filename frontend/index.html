@@ -49,6 +49,14 @@
         <tr><th>Flame</th><td id="p-flame">0</td></tr>
       </table>
 
+      <p id="risk-explain" class="explain"></p>
+      <details class="formula">
+        <summary>How is this calculated?</summary>
+        <dl id="formula-list"></dl>
+        <p id="formula-why" class="note"></p>
+        <p class="note">This is a simple, transparent score for the demo, not a validated fire model.</p>
+      </details>
+
       <p class="note">The sensor box measures smoke, temperature and pressure. Oxygen is set with a dial to simulate the habitat’s air.</p>
     </section>
 
@@ -62,9 +70,10 @@
           <option value="suppression">Putting fires out</option>
         </select>
       </div>
+      <p id="near-rule" class="rule-note"></p>
       <table class="exp-table">
         <thead>
-          <tr><th class="pick"><span class="sr">Compare</span></th><th>Experiment</th><th>Covers</th><th class="num">Runs near you</th><th class="num">Oxygen tested</th></tr>
+          <tr><th class="pick"><span class="sr">Compare</span></th><th>Experiment</th><th>Covers</th><th class="num"><span id="near-head" title="">Runs near you<sup aria-hidden="true">?</sup></span></th><th class="num">Oxygen tested</th></tr>
         </thead>
         <tbody id="rank-body"></tbody>
       </table>
@@ -90,6 +99,7 @@
       <h2>Where NASA has tested, and where it hasn’t</h2>
       <p class="sub">Every dot is one test run on the space station. The ring is your habitat; the shaded band is the oxygen range planned for Moon bases.</p>
       <div class="chart-wrap"><canvas id="gap-chart"></canvas></div>
+      <p id="saffire-note" class="callout" hidden>NASA’s Saffire-VI burned fabric and acrylic at 29–31% oxygen and about 7.9 psi in its final 2023–24 flight. Those results aren’t in the PSI data yet. <a href="https://ntrs.nasa.gov/citations/20240002981" target="_blank" rel="noopener">NASA report</a></p>
       <p class="note">No fire data exists yet for lunar gravity. NASA’s FM2 experiment is planned to fly to the Moon in late 2026.</p>
     </section>
 
@@ -109,6 +119,11 @@
       </form>
     </section>
   </main>
+
+  <details class="earth">
+    <summary>On Earth</summary>
+    <p>The same physics applies wherever air is oxygen-enriched on Earth, such as hospital oxygen therapy and hyperbaric chambers. NASA fire research has also fed into everyday safety equipment, including smoke detectors, firefighter gear and water-mist extinguishers.</p>
+  </details>
 
   <footer>
     Data from NASA’s <a href="https://psi.nasa.gov/physci/repo/search?q=combustion" target="_blank" rel="noopener">Physical Sciences Informatics</a> repository, 24 combustion investigations. Built for NASA Space Apps 2026, Flame in Freefall.

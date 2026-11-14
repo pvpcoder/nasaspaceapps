@@ -32,12 +32,13 @@ async function refreshState() {
   state = await api("/api/state");
   const sel = $("scenario");
   if (!sel.options.length) {
-    sel.add(new Option("Sensor box (live)", "live"));
-    sel.options[0].disabled = true;
+    sel.add(new Option("Sensor box (not connected)", "live"));
     for (const [k, v] of Object.entries(state.scenarios)) sel.add(new Option(v.label, k));
   }
-  sel.value = state.live ? "live" : state.scenario;
-  sel.disabled = state.live;
+  // The sensor option turns on by itself as soon as live readings arrive.
+  sel.options[0].textContent = state.live ? "Sensor box (live)" : "Sensor box (not connected)";
+  sel.options[0].disabled = !state.live;
+  if (document.activeElement !== sel) sel.value = state.live ? "live" : state.scenario;
 
   $("source").textContent = state.live ? "Live from sensor box" : "Preset habitat";
   $("source").classList.toggle("live", state.live);
@@ -55,16 +56,30 @@ async function refreshState() {
   $("p-smoke").textContent = risk.parts.smoke;
   $("p-heat").textContent = risk.parts.heat;
   $("p-flame").textContent = risk.parts.flame;
+  $("risk-explain").textContent = risk.explain;
+  if (!$("formula-list").children.length) {
+    const f = risk.formula;
+    $("formula-list").innerHTML = [["Oxygen", f.oxygen], ["Smoke", f.smoke], ["Heat", f.heat],
+      ["Flame", f.flame], ["Levels", f.levels]].map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("");
+    $("formula-why").textContent = f.why_concentration;
+  }
 
-  const key = `${Math.round(state.o2_pct)}|${state.pressure_psi.toFixed(1)}|${$("area").value}|${showAll}`;
+  // Saffire-VI burned cabin materials at 29–31% O2, outside the PSI data.
+  $("saffire-note").hidden = state.o2_pct < 28;
+
+  const key = `${Math.round(state.o2_pct)}|${state.pressure_psi.toFixed(1)}|${state.live}|${$("area").value}|${showAll}`;
   if (key !== lastKey) {
+    const habitatChanged = key.split("|").slice(0, 3).join() !== lastKey.split("|").slice(0, 3).join();
     lastKey = key;
     markHabitat();
     await refreshRank();
+    // Keep an open comparison in step with the habitat.
+    if (habitatChanged && !$("compare").hidden && selected.size >= 2) await showCompare(false);
   }
 }
 
 $("scenario").addEventListener("change", async (e) => {
+  if (e.target.value === "live") return;   // live readings drive the habitat already
   await api("/api/scenario", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ key: e.target.value }) });
   refreshState();
@@ -84,12 +99,13 @@ function writeFinding(results) {
   const near = results.reduce((n, r) => n + r.tests_near, 0);
   const solidNear = results.filter((r) => r.fuel_kind === "solid").reduce((n, r) => n + r.tests_near, 0);
   let text;
+  const runs = (n) => `${n} test run${n === 1 ? "" : "s"}`;
   if (near === 0) {
-    text = `At ${o2}% oxygen and ${psi} psi, no NASA fire test on the space station comes close to this habitat.`;
+    text = `In NASA’s public PSI data, no space station fire test comes close to ${o2}% oxygen at ${psi} psi.`;
   } else if (solidNear === 0) {
-    text = `At ${o2}% oxygen and ${psi} psi, NASA has ${near} test runs near these conditions, and none of them burned the fabrics and plastics a cabin is made of.`;
+    text = `In NASA’s public PSI data, ${runs(near)} come close to ${o2}% oxygen at ${psi} psi, and none of them burned the fabrics and plastics a cabin is made of.`;
   } else {
-    text = `At ${o2}% oxygen and ${psi} psi, NASA has ${near} test runs near these conditions, ${solidNear} of them burning real cabin materials.`;
+    text = `In NASA’s public PSI data, ${runs(near)} come close to ${o2}% oxygen at ${psi} psi, ${solidNear} of them burning real cabin materials.`;
   }
   $("finding").textContent = text;
 }
@@ -98,6 +114,8 @@ function writeFinding(results) {
 async function refreshRank() {
   const d = await api(`/api/rank?area=${$("area").value}&limit=30`);
   writeFinding(d.results);
+  $("near-rule").textContent = `“Runs near you” counts test runs ${d.near_rule} of this habitat. ${d.near_note}`;
+  $("near-head").title = `Counts test runs ${d.near_rule} of this habitat`;
   const rows = showAll ? d.results : d.results.slice(0, 8);
   $("rank-body").innerHTML = rows.map((r, i) => `
     <tr class="exp-row" tabindex="0" aria-expanded="false" data-i="${i}">
@@ -160,7 +178,7 @@ function updateCompareButton() {
   $("compare-btn").textContent = n < 2 ? "Tick up to 3 to compare" : `Compare ${n} experiments`;
 }
 
-$("compare-btn").addEventListener("click", showCompare);
+$("compare-btn").addEventListener("click", () => showCompare(true));
 $("compare-close").addEventListener("click", () => { $("compare").hidden = true; });
 
 const range = (r, unit, d = 0) => {
@@ -170,7 +188,7 @@ const range = (r, unit, d = 0) => {
 };
 const list = (xs) => xs && xs.length ? `<ul>${xs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "None recorded";
 
-async function showCompare() {
+async function showCompare(scroll = true) {
   const d = await api(`/api/compare?ids=${[...selected].join(",")}`);
   const inv = d.investigations;
   const rows = [
@@ -181,7 +199,8 @@ async function showCompare() {
     ["What was measured", (x) => esc(x.measured || "Not listed")],
     ["Oxygen tested", (x) => range(x.o2_range, "%")],
     ["Pressure tested", (x) => range(x.pressure_range, "atm", 2)],
-    ["Airflow", (x) => range(x.airflow_range, "cm/s")],
+    ["Airflow", (x) => x.airflow_range ? range(x.airflow_range, "cm/s") : esc(x.airflow_note || "Not recorded")],
+    ["Suppressants and diluents", (x) => esc(x.agents || "None listed")],
     ["Changed between runs", (x) => list(x.varied)],
     ["Held the same", (x) => list(x.fixed)],
     ["Test runs", (x) => `${x.test_rows}`],
@@ -192,12 +211,12 @@ async function showCompare() {
     <thead><tr><th></th>${inv.map((x) => `<th><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.id)}</a> ${esc(x.acronym || "")}<small>${esc(shortTitle(x.title))}</small></th>`).join("")}</tr></thead>
     <tbody>${rows.map(([label, f]) => {
       const cells = inv.map(f);
-      const same = inv.length > 1 && cells.every((c) => c === cells[0]) && !/Not (listed|recorded)|None/.test(cells[0]);
+      const same = inv.length > 1 && cells.every((c) => c === cells[0]) && !/Not (listed|recorded)|None|units unclear/.test(cells[0]);
       return `<tr class="${same ? "same" : ""}"><th scope="row">${label}</th>${cells.map((c) => `<td>${c}</td>`).join("")}</tr>`;
     }).join("")}</tbody>`;
   $("compare-summary").innerHTML = summarizeComparison(inv).map((t) => `<li>${t}</li>`).join("");
   $("compare").hidden = false;
-  $("compare").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  if (scroll) $("compare").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
 
 // Plain-language similarities and differences.
@@ -327,6 +346,7 @@ async function buildChart() {
       datasets: [
         ...Object.entries(byArea).filter(([, data]) => data.length).map(([area, data]) => ({
           label: AREA_WORDS[area], data, pointRadius: 3, pointHoverRadius: 5,
+          order: area === "detection" ? 0 : 1,   // smoke tests sit at 21% / 1 atm; draw them on top
           backgroundColor: AREA_COLORS[area] + "b3", borderWidth: 0,
         })),
         { label: "Your habitat", data: [], pointRadius: 9, pointHoverRadius: 10,

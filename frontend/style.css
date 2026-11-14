@@ -87,6 +87,20 @@ select, input, button { font: inherit; color: inherit; }
 .breakdown th { text-align: left; font-weight: 400; color: var(--muted); padding: 3px 0; }
 .breakdown td { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
 .note { font-size: 13px; color: var(--muted); margin: 16px 0 0; max-width: 60ch; }
+.explain { font-size: 14px; margin: 12px 0 0; max-width: 60ch; }
+.formula { margin-top: 10px; font-size: 14px; }
+.formula summary { cursor: pointer; color: var(--prevent); text-decoration: underline; }
+.formula dl { margin: 10px 0 0; display: grid; gap: 6px; }
+.formula dt { font-weight: 600; }
+.formula dd { margin: 0 0 4px; color: var(--muted); }
+.rule-note { margin: -6px 22px 10px; font-size: 13px; color: var(--muted); }
+#near-head { cursor: help; }
+#near-head sup { font-size: 10px; margin-left: 2px; color: var(--prevent); }
+.callout { margin: 14px 0 0; padding: 10px 14px; background: #fdf1d8; border-left: 3px solid var(--caution); font-size: 14px; max-width: 75ch; }
+.grid > * { min-width: 0; }
+.earth { margin: 0 40px 24px; max-width: 90ch; background: var(--panel); border: 1px solid var(--rule); border-radius: 3px; padding: 14px 22px; }
+.earth summary { cursor: pointer; font-weight: 600; }
+.earth p { margin: 10px 0 0; font-size: 15px; }
 
 /* ---------- experiments table ---------- */
 .experiments { padding: 22px 0 14px; }
@@ -180,4 +194,6 @@ footer { padding: 0 40px 40px; font-size: 13px; color: var(--muted); max-width: 
   .experiments, .gaps, .ask { grid-column: 1; }
   .exp-table th:nth-child(3), .exp-table td.covers { display: none; }
   footer { padding: 0 20px 28px; }
+  .earth { margin: 0 20px 20px; }
+  .compare-table { min-width: 640px; }
 }

@@ -5,6 +5,8 @@ investigation's PSI description (approach, hardware, experimental table).
 hardware: where and with what apparatus it ran
 fuel:     what burned, and the sample/burner shape and size
 measured: sensors and the quantities recorded
+agents:   suppressants or diluent gases used (optional)
+airflow_note: shown when airflow exists but isn't in clear units (optional)
 """
 
 ACME = "ACME burner hardware in the Combustion Integrated Rack (CIR), ISS"
@@ -14,6 +16,7 @@ SAFFIRE = "Large flow duct in a Cygnus cargo ship, run after it left the ISS"
 
 PROFILES = {
     "PSI-10": {
+        "agents": "Nitrogen as diluent",
         "hardware": ACME,
         "fuel": "Gaseous ethylene from a porous spherical burner; normal flames (fuel flows out) and inverse flames (oxygen flows out)",
         "measured": "Cameras, radiometers, photomultiplier tubes, thermocouples; soot-inception limits",
@@ -39,31 +42,37 @@ PROFILES = {
         "measured": "Spectrally resolved images, flame and burner temperatures, radiative flux",
     },
     "PSI-159": {
+        "agents": "Nitrogen as diluent",
         "hardware": ACME,
         "fuel": "Propane, butane, pentane and ethane from a spherical burner; inverse flames used up to 85% oxygen",
         "measured": "Cameras, radiometers, photomultiplier tubes, thermocouples; cool-flame and hot-flame behaviour",
     },
     "PSI-39": {
+        "agents": "Nitrogen and helium as diluents",
         "hardware": MDCA,
         "fuel": "Free-floating or fiber-tethered droplets of n-dodecane, farnesane and dodecane/iso-dodecane mixes",
         "measured": "Black-and-white camera (droplet size), UV camera (OH* emission, flame size)",
     },
     "PSI-68": {
+        "agents": "Helium or nitrogen as the diluent gas (O₂/He or O₂/N₂ atmospheres)",
         "hardware": MDCA,
         "fuel": "Liquid droplets 1.5 to 5 mm: iso-octane, n-octane, heptane and mixtures, in O₂/N₂ or O₂/He",
         "measured": "Droplet and flame diameter over time, extinction",
     },
     "PSI-69": {
+        "agents": "CO₂ and helium added to the chamber atmosphere to test suppression; nitrogen as the usual diluent",
         "hardware": MDCA,
         "fuel": "Liquid droplets about 1.5 to 4 mm: methanol and heptane, some with CO₂ or helium added",
         "measured": "Droplet diameter, flame extinction diameter, burning rate, burn time; limiting oxygen index",
     },
     "PSI-26": {
+        "agents": "Nitrogen released to extinguish flames (similar to the ISS extinguishing approach)",
         "hardware": MSG_DUCT,
         "fuel": "Cotton-fiberglass fabric (SIBAL), Nomex and PMMA plastic as 1 to 2 cm strips, slabs and spheres; wax candles",
         "measured": "Top and edge video: flame size, shape, colour, spread rate, quenching; nitrogen suppression",
     },
     "PSI-25": {
+        "agents": "Nitrogen added to lower oxygen below 21%", "airflow_note": "Recorded as fan and air-speed settings; units unclear (up to 40 cm/s per NASA's description)",
         "hardware": MSG_DUCT,
         "fuel": "SIBAL fabric strips (1 to 2 cm), PMMA rods (1/4 to 1/2 inch) and thin PMMA films, Nomex",
         "measured": "Flame growth and spread rate, radiometer, O₂, CO₂ and CO before and after each burn",

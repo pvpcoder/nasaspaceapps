@@ -52,7 +52,15 @@ TAGS = {
 DEFAULT_TAG = {"areas": ["prevention"], "fuel_kind": "modeling", "crew_relevance": 1}
 
 # Experiments with no O2 column that burned in normal cabin air (~21% O2).
-O2_DEFAULT = {"PSI-26": 21.0, "PSI-100": 21.0}
+O2_DEFAULT = {"PSI-26": 21.0, "PSI-100": 21.0,
+              # Detection experiments: no O2 recorded. SPICE's description says it burned
+              # in coflowing air; SAME, SAME-R and DAFT ran in the ISS glovebox with no
+              # gas supply described, so cabin air is assumed (and labelled as such).
+              "PSI-107": 21.0, "PSI-102": 21.0, "PSI-101": 21.0, "PSI-47": 21.0}
+CABIN_NOTE = {"PSI-107": "assumed: ISS cabin air (described as burning in air)",
+              "PSI-102": "assumed: ISS cabin air (not stated in PSI)",
+              "PSI-101": "assumed: ISS cabin air (not stated in PSI)",
+              "PSI-47": "assumed: ISS cabin air (not stated in PSI)"}
 # NASA notes say pressure varied but wasn't recorded: don't assume 1 atm.
 NO_PRESSURE_ASSUMPTION = {"PSI-20"}
 
@@ -159,14 +167,15 @@ def clean_table(inv, table_file):
                     o2 = None
                 if o2 is None and not cols["o2"] and inv["id"] in O2_DEFAULT:
                     o2 = O2_DEFAULT[inv["id"]]
-                    notes.append("O2 assumed 21% (cabin air)")
+                    notes.append(CABIN_NOTE.get(inv["id"], "assumed: ISS cabin air"))
                 p = to_atm(p_raw, cols["p"] or "", p_cell or "") if cols["p"] else None
                 if p is not None and not (0 < p < 10):
                     p = None
                 if p is None and not cols["p"] and inv["id"] not in NO_PRESSURE_ASSUMPTION:
                     # BASS, Saffire etc. ran in normal spacecraft cabin air (~1 atm).
                     p = 1.0
-                    notes.append("pressure assumed 1 atm (cabin air)")
+                    if not any("cabin air" in n for n in notes):
+                        notes.append("pressure assumed: ISS cabin air (1 atm)")
                 if inverse and o2 is not None:
                     # Inverse flames: oxygen flows OUT of the burner, so this is burner O2, not cabin air.
                     notes.append("burner O2 (inverse flame)")
@@ -180,8 +189,7 @@ def clean_table(inv, table_file):
                     "fuel": (rec.get(cols["fuel"]) or "").strip() if cols["fuel"] else "",
                     "outcome": (rec.get(cols["outcome"]) or "").strip() if cols["outcome"] else "",
                     # NASA's "µ-g" (microgravity) arrives as "?-g" in some files.
-                    "outcome_col": re.sub(r"\s+", " ", cols["outcome"]).replace("?-g", "microgravity").strip()
-                    if cols["outcome"] else "",
+                    "outcome_col": readable(cols["outcome"]) if cols["outcome"] else "",
                     "o2_note": "; ".join(notes),
                 })
     return out, cols
@@ -190,10 +198,74 @@ def clean_table(inv, table_file):
 # Columns that identify a run rather than describe its conditions.
 NOT_A_VARIABLE = re.compile(
     r"test|#|date|gmt|time|^day|year|month|number|camera|note|comment|identifier|"
-    r"^cir|session|^pi$|frames|gain|^flex|end$|color|ignited|hot ignition|self.?ext|"
+    r"^cir|session|^pi$|frames|gain|^flex|end$|color|ignited|hot ignition|self.{0,2}ext|"
     r"after|final|burn ?time|peak|duration|burning rate|burnrate|length|"
     r"extinction diameter|tad|zst|tfp|mhc|loss|rt/r0|spread|co2 % by vol|co \(ppm\)|"
     r"description|cool flame\?", re.I)
+
+
+READABLE = [
+    (r"^o initial ambient composition", "Initial oxygen (mole fraction)"),
+    (r"^n initial ambient composition", "Initial nitrogen (mole fraction)"),
+    (r"^co initial ambient composition", "Initial CO₂ (mole fraction)"),
+    (r"^he initial ambient composition", "Initial helium (mole fraction)"),
+    (r"^ambient pressure; mmhg", "Pressure (mmHg)"),
+    (r"^ambient pressure \(atm\)", "Pressure (atm)"),
+    (r"^approx p \(bar\)", "Pressure (bar)"),
+    (r"^pinit \(atm\)", "Initial pressure (atm)"),
+    (r"^pmean \(atm\)", "Mean pressure (atm)"),
+    (r"^droplet initial diameter; mm", "Initial droplet diameter (mm)"),
+    (r"^initial droplet diameter \(mm\)", "Initial droplet diameter (mm)"),
+    (r"^xo2 \(init\)", "Initial oxygen (mole fraction)"),
+    (r"^xo2( before test)?$", "Oxygen (mole fraction)"),
+    (r"^oxygen mole fraction", "Oxygen (mole fraction)"),
+    (r"^oxygen conc \(percent\)", "Oxygen (%)"),
+    (r"^percent o2", "Oxygen (%)"),
+    (r"^calibrated initial o2 % by vol", "Initial oxygen (% by volume)"),
+    (r"^mo2 \(mg/s\)", "Oxygen flow (mg/s)"),
+    (r"^mn2 \(mg/s\)", "Nitrogen flow (mg/s)"),
+    (r"^mtot \(mg/s\)", "Total gas flow (mg/s)"),
+    (r"^mfuel \(mg/s\)", "Fuel flow (mg/s)"),
+    (r"^xc2h4 initial", "Initial ethylene (mole fraction)"),
+    (r"^xfuel", "Fuel fraction"),
+    (r"^xf$", "Fuel fraction (mole fraction)"),
+    (r"^samle thickness", "Sample thickness"),
+    (r"^fan display", "Fan setting (units unclear)"),
+    (r"^air display", "Air speed setting (units unclear)"),
+    (r"^flow restrictor", "Flow restrictor"),
+    (r"^fuel sample material", "Sample material"),
+    (r"^sample \(fuel type\)", "Fuel"),
+    (r"^ambient gas mixture", "Gas mixture"),
+    (r"^ambient temperature \(c\)", "Temperature (°C)"),
+    (r"^flow velocity \(cm/s\)", "Flow velocity (cm/s)"),
+    (r"^air flow", "Airflow"),
+    (r"^inlet velocity \(cm/s\)", "Inlet velocity (cm/s)"),
+    (r"^nozzle \(mm\)", "Nozzle diameter (mm)"),
+    (r"^fuel rate \(sccm\)", "Fuel flow (sccm)"),
+    (r"^fuel rate \(mg/s\)", "Fuel flow (mg/s)"),
+    (r"^hc fuel rate \(mg/s\)", "Hydrocarbon fuel flow (mg/s)"),
+    (r"^air rate \(cm/s\)", "Air speed (cm/s)"),
+    (r"^burner size \(mm\)", "Burner size (mm)"),
+    (r"^fuel bottle", "Fuel mix"),
+    (r"^flame type", "Flame type"),
+    (r"^o2 flow rate \(mg/s\)", "Oxygen flow (mg/s)"),
+    (r"^sample material", "Sample material"),
+    (r"^sample type", "Sample material"),
+    (r"^visible flame extinction diameter", "Flame extinction diameter (mm)"),
+    (r"^flames ignited", "Flames ignited (count)"),
+    (r"^burn time \(sec\)", "Burn time (s)"),
+    (r"^mesh polarity", "Electric field polarity"),
+]
+
+
+def readable(header):
+    """Map NASA's raw column names to plain labels; tidy anything unknown."""
+    h = re.sub(r"\s+", " ", header.replace("\ufeff", "")).strip()
+    for pattern, label in READABLE:
+        if re.search(pattern, h.lower()):
+            return label
+    h = h.replace("?-g", "microgravity").replace("?", "").replace("*", "").strip(" ;:,")
+    return h[:1].upper() + h[1:]
 
 
 def describe_variables(inv):
@@ -211,17 +283,19 @@ def describe_variables(inv):
                 continue
             for r in body:
                 if j < len(r) and r[j].strip():
-                    values.setdefault(h, {})[r[j].strip()] = True
+                    v = r[j].strip()
+                    values.setdefault(h, {}).setdefault(v.lower(), v)
     varied, fixed = [], []
     for h, vals in values.items():
-        vals = list(vals)
+        vals = list(vals.values())
         listed = len(vals) == 1 and re.search(r";| - |\bor\b", vals[0])
+        label = readable(h)
         if len(vals) > 1:
-            varied.append(f"{h} ({len(vals)} values)")
+            varied.append(f"{label} ({len(vals)} values)")
         elif listed:
-            varied.append(f"{h} ({vals[0][:40]})")
+            varied.append(f"{label} ({vals[0][:40]})")
         else:
-            fixed.append(f"{h}: {vals[0][:40]}")
+            fixed.append(f"{label}: {vals[0][:40]}")
     return varied[:8], fixed[:6]
 
 

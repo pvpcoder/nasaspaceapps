@@ -16,6 +16,7 @@ import csv
 import io
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -78,18 +79,37 @@ class Scenario(BaseModel):
     key: str
 
 
+SEA_LEVEL_PPO2_PSI = 0.21 * 14.696   # ≈ 3.1 psi
+
+RISK_FORMULA = {
+    "oxygen": "60 × (O₂% − 21) ÷ 19, from 0 at 21% up to a maximum of 60 at 40% or more",
+    "smoke": "Smoke reading (0–100) × 0.25, maximum 25",
+    "heat": "0 at 30 °C or below, rising to 15 at 60 °C: 15 × (°C − 30) ÷ 30",
+    "flame": "25 if the flame sensor detects a flame, otherwise 0",
+    "levels": "Nominal under 30 · Caution 30–59 · Warning 60 or more, or any flame",
+    "why_concentration": ("The oxygen score uses oxygen concentration (%), not partial pressure. "
+                          "A Moon base at 34% O₂ and 8.2 psi has a lower oxygen partial pressure "
+                          "than sea level, yet NASA expects materials to burn more easily there: "
+                          "flammability tracks the oxygen fraction more closely than its partial pressure."),
+}
+
+
 def risk(state):
     """Simple, explainable fire-risk score (0-100). Not a validated model: it
     combines how flammable the atmosphere is with what the sensors detect."""
     o2 = state["o2_pct"]
-    # Atmosphere term: 21% O2 -> 0, 40%+ -> 60. Higher O2 = materials burn more easily.
     atmo = max(0.0, min(60.0, (o2 - 21) / 19 * 60))
     smoke = min(25.0, (state.get("smoke") or 0) / 100 * 25)
     heat = max(0.0, min(15.0, ((state.get("temp_c") or 22) - 30) / 30 * 15))
     flame = 25.0 if state.get("flame") else 0.0
     score = min(100.0, atmo + smoke + heat + flame)
     level = "red" if score >= 60 or state.get("flame") else "yellow" if score >= 30 else "green"
-    return {"score": round(score), "level": level,
+    ppo2 = o2 / 100 * state["pressure_psi"]
+    explain = (f"Oxygen adds {round(atmo)} because the air is {o2:.0f}% oxygen "
+               f"(Earth: 21%). Oxygen partial pressure here is {ppo2:.1f} psi vs "
+               f"{SEA_LEVEL_PPO2_PSI:.1f} psi at sea level.")
+    return {"score": round(score), "level": level, "explain": explain,
+            "ppo2_psi": round(ppo2, 2), "formula": RISK_FORMULA,
             "parts": {"atmosphere": round(atmo), "smoke": round(smoke),
                       "heat": round(heat), "flame": round(flame)}}
 
@@ -116,14 +136,42 @@ def get_state():
 
 # ---------- ranking ----------
 
-def closeness(test, o2, p_atm):
-    """0..1, how close one NASA test is to the habitat (O2 and pressure)."""
+# A NASA test run counts as "near" the habitat when BOTH hold:
+NEAR_RULE = {"o2_points": 4.0,       # oxygen within ±4 percentage points
+             "pressure_frac": 0.30}  # pressure within ±30% of the habitat's
+NEAR_RULE_TEXT = (f"within ±{NEAR_RULE['o2_points']:g} points of oxygen "
+                  f"and ±{NEAR_RULE['pressure_frac']:.0%} of pressure")
+NEAR_RULE_NOTE = ("Experiments that only publish summary ranges (FLEX-2, ACME BRE) "
+                  "can't be matched run by run, so they're never counted as near.")
+
+
+def _usable(test):
     # Inverse flames: the O2 value is burner gas, not the cabin atmosphere.
-    if test["o2_pct"] is None or "burner" in (test.get("o2_note") or ""):
+    return test["o2_pct"] is not None and "burner" not in (test.get("o2_note") or "")
+
+
+def is_near(test, o2, p_atm):
+    if not _usable(test) or test["pressure_atm"] is None:
+        return False
+    # Summary rows (e.g. FLEX-2) list several conditions per row, so we can't tell
+    # which combination was actually burned. Never count them as near.
+    if "summary row" in (test.get("o2_note") or ""):
+        return False
+    return (abs(test["o2_pct"] - o2) <= NEAR_RULE["o2_points"]
+            and abs(test["pressure_atm"] - p_atm) <= NEAR_RULE["pressure_frac"] * p_atm)
+
+
+def closeness(test, o2, p_atm):
+    """0..1 similarity used for ranking. Exactly 0.5 at the edge of the near rule,
+    so anything near scores >= 0.5. None if the run has no usable cabin O2."""
+    if not _usable(test):
         return None
-    d_o2 = abs(test["o2_pct"] - o2) / 20          # 20 points of O2 = "far"
-    d_p = abs(test["pressure_atm"] - p_atm) / 0.5 if test["pressure_atm"] is not None else 0.5
-    return max(0.0, 1 - (d_o2 ** 2 + d_p ** 2) ** 0.5)
+    d_o2 = abs(test["o2_pct"] - o2) / (2 * NEAR_RULE["o2_points"])
+    if test["pressure_atm"] is None:
+        d_p = 0.5   # unknown pressure: partial credit, never "near"
+    else:
+        d_p = abs(test["pressure_atm"] - p_atm) / (2 * NEAR_RULE["pressure_frac"] * p_atm)
+    return max(0.0, 1 - max(d_o2, d_p))
 
 
 @app.get("/api/rank")
@@ -137,7 +185,7 @@ def rank(area: str = "all", limit: int = 30):
         best = max((s for s, _ in scored), default=0.0)
         # Count original NASA rows (summary rows can expand into several points).
         n_tests = len({(t["table"], t["row"]) for t in tests})
-        near = len({(t["table"], t["row"]) for s, t in scored if s > 0.5})
+        near = len({(t["table"], t["row"]) for _, t in scored if is_near(t, o2, p_atm)})
         o2s = [t["o2_pct"] for t in tests if t["o2_pct"] is not None]
         # Score = condition match (50) + crew relevance (30) + area match (20)
         area_match = area == "all" or area in inv.get("areas", [])
@@ -155,14 +203,15 @@ def rank(area: str = "all", limit: int = 30):
             "why": explain(inv, best, near, area_match),
         })
     results.sort(key=lambda r: r["score"], reverse=True)
-    return {"conditions": {"o2_pct": o2, "pressure_atm": round(p_atm, 3)}, "results": results[:limit]}
+    return {"conditions": {"o2_pct": o2, "pressure_atm": round(p_atm, 3)},
+            "near_rule": NEAR_RULE_TEXT, "near_note": NEAR_RULE_NOTE, "results": results[:limit]}
 
 
 def explain(inv, best, near, area_match):
     bits = []
-    if best > 0.7:
-        bits.append(f"{near} test runs at conditions close to this habitat")
-    elif best > 0.3:
+    if near:
+        bits.append(f"{near} test runs {NEAR_RULE_TEXT} of this habitat")
+    elif best > 0.25:
         bits.append("some test runs in a similar oxygen/pressure range")
     else:
         bits.append("no test runs near these conditions")
@@ -188,7 +237,8 @@ def points():
 # ---------- compare + export ----------
 
 COMPARE_FIELDS = ["id", "acronym", "title", "doi", "url", "project_type", "areas", "hardware",
-                  "fuel", "samples", "measured", "o2_range", "pressure_range", "airflow_range",
+                  "fuel", "samples", "measured", "agents", "o2_range", "pressure_range",
+                  "airflow_range", "airflow_note",
                   "varied", "fixed", "test_rows", "objectives"]
 
 
@@ -202,7 +252,7 @@ def compare(ids: str):
         if not inv:
             continue
         tests = [t for t in TESTS if t["psi_id"] == pid]
-        near = {(t["table"], t["row"]) for t in tests if (closeness(t, o2, p_atm) or 0) > 0.5}
+        near = {(t["table"], t["row"]) for t in tests if is_near(t, o2, p_atm)}
         prof = {k: inv.get(k) for k in COMPARE_FIELDS}
         prof["hardware"] = prof["hardware"] if isinstance(prof["hardware"], str) else ""
         prof["objectives"] = (prof["objectives"] or "")[:500]
@@ -212,7 +262,8 @@ def compare(ids: str):
 
 
 EXPORT_COLUMNS = ["psi_id", "acronym", "doi", "o2_pct", "pressure_atm", "airflow_cms",
-                  "fuel", "outcome", "match_to_habitat", "note", "source_table", "source_row"]
+                  "fuel", "outcome", "outcome_measure", "near_habitat", "match_to_habitat",
+                  "note", "source_table", "source_row"]
 
 
 @app.get("/api/export")
@@ -227,12 +278,13 @@ def export(scope: str = "near", ids: str = ""):
     w.writerow(EXPORT_COLUMNS)
     for t in TESTS:
         match = closeness(t, o2, p_atm)
-        if scope == "near" and (match is None or match <= 0.5):
+        if scope == "near" and not is_near(t, o2, p_atm):
             continue
         if scope == "ids" and t["psi_id"] not in wanted:
             continue
         w.writerow([t["psi_id"], t["acronym"], BY_ID.get(t["psi_id"], {}).get("doi", ""),
                     t["o2_pct"], t["pressure_atm"], t["airflow_cms"], t["fuel"], t["outcome"],
+                    t.get("outcome_col", ""), "yes" if is_near(t, o2, p_atm) else "no",
                     "" if match is None else round(match, 2), t["o2_note"], t["table"], t["row"]])
     name = (f"flamewatch_runs_near_{round(o2)}pct_{STATE['pressure_psi']:.1f}psi.csv" if scope == "near"
             else f"flamewatch_runs_{'_'.join(sorted(wanted)) or 'none'}.csv")
@@ -246,74 +298,148 @@ class Question(BaseModel):
     question: str
 
 
-def build_context(top):
-    o2, p_atm = STATE["o2_pct"], STATE["pressure_psi"] / PSI_PER_ATM
-    blocks = []
-    for r in top:
-        inv = BY_ID[r["id"]]
-        tests = [t for t in TESTS if t["psi_id"] == r["id"]]
-        # The runs closest to the habitat, not just the first rows of the file.
-        tests.sort(key=lambda t: closeness(t, o2, p_atm) or -1, reverse=True)
-        rows = []
-        for t in tests[:12]:
-            bits = [f"O2 {t['o2_pct']}%" if t["o2_pct"] is not None else "O2 not recorded",
-                    f"{t['pressure_atm']} atm" if t["pressure_atm"] is not None else "pressure not recorded"]
-            if t["airflow_cms"] is not None:
-                bits.append(f"airflow {t['airflow_cms']} cm/s")
-            if t["fuel"]:
-                bits.append(f"fuel/sample: {t['fuel']}")
-            if t["outcome"]:
-                bits.append(f"{t.get('outcome_col') or 'outcome'} = {t['outcome']}")
-            if t["o2_note"]:
-                bits.append(f"[{t['o2_note']}]")
-            rows.append("  - " + "; ".join(bits))
-        blocks.append(
-            f"### {r['id']} {r['acronym']}: {inv['title']} (DOI {inv.get('doi')})\n"
-            f"Safety areas: {', '.join(r['areas'])}. Runs: {r['tests_total']}, near this habitat: {r['tests_near']}.\n"
-            f"Hardware: {inv.get('hardware') if isinstance(inv.get('hardware'), str) else 'n/a'}\n"
-            f"What burned: {inv.get('fuel', 'n/a')}\n"
-            f"Measured: {inv.get('measured', 'n/a')}\n"
-            f"Oxygen range tested: {inv.get('o2_range')}; pressure range (atm): {inv.get('pressure_range')}; "
-            f"airflow (cm/s): {inv.get('airflow_range')}\n"
+def trim(text, limit):
+    """Shorten at a sentence boundary; never leave a dangling half-sentence."""
+    text = re.sub(r"\s+", " ", text or "").strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    end = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
+    return cut[:end + 1] if end > limit * 0.4 else cut.rsplit(" ", 1)[0] + "…"
+
+
+def fmt_range(r, unit):
+    return "not recorded" if not r else (f"{r[0]:g}{unit}" if r[0] == r[1] else f"{r[0]:g}–{r[1]:g}{unit}")
+
+
+# Facts from outside the PSI database, so the AI doesn't contradict them.
+OUTSIDE_PSI = """Results NOT in the PSI database (published elsewhere by NASA):
+- Saffire-V (Cygnus, 2020): burned cotton jersey fabric at 26.2% O2 and 70.7 kPa (about 10.3 psi).
+- Saffire-VI (Cygnus, final flight 2023-24): burned SIBAL fabric at 31.0% O2 and 54.1 kPa (about 7.8 psi),
+  and 1 cm and 0.5 cm thick PMMA at 30.3% and 28.8% O2 at about 55 kPa (about 8.0 psi), all at 20 cm/s airflow.
+  Source: NASA, "Preliminary Results from the Saffire VI Experiment", ICES 2024.
+- LUCI (Blue Origin New Shepard, spun to simulate lunar gravity): measured flame spread over SIBAL fabric (~0.9 mm/s) and PMMA (~1.5 mm/s).
+- FM2 (Flammability of Materials on the Moon): the first fire experiment on the Moon, planned for late 2026."""
+
+# Words a question might use -> text to look for in an investigation's profile.
+KEYWORDS = {
+    "helium": ["helium"], "co2": ["co₂", "co2"], "carbon dioxide": ["co₂", "co2"],
+    "nitrogen": ["nitrogen"], "suppress": ["suppress", "extinguish"], "extinguish": ["suppress", "extinguish"],
+    "droplet": ["droplet"], "liquid": ["droplet"], "pmma": ["pmma"], "acrylic": ["pmma"], "plastic": ["pmma", "plastic"],
+    "fabric": ["fabric", "sibal", "nomex"], "cotton": ["cotton", "sibal"], "sibal": ["sibal"], "nomex": ["nomex"],
+    "silicone": ["silicone"], "kapton": ["kapton"], "teflon": ["teflon"], "smoke": ["smoke"],
+    "soot": ["soot"], "dust": ["dust"], "detect": ["smoke", "detector"], "cool flame": ["cool"],
+    "methane": ["methane"], "ethylene": ["ethylene"], "propane": ["propane"], "heptane": ["heptane"],
+    "methanol": ["methanol"], "electric": ["electric"], "candle": ["candle", "wax"], "wax": ["wax"],
+    "spread": ["spread"], "radiat": ["radiat"], "pressure": [], "lunar": ["partial gravity"],
+}
+
+
+def profile_text(inv):
+    return " ".join(str(inv.get(k) or "") for k in
+                    ("acronym", "title", "fuel", "measured", "agents", "samples", "varied")).lower()
+
+
+def mentioned(question):
+    """Investigations the question names (ID, acronym) or matches by keyword,
+    strongest match first."""
+    q = question.lower()
+    scored = []
+    for inv in CATALOG:
+        acr = (inv.get("acronym") or "").lower()
+        names = [inv["id"].lower()] + [a.strip() for a in re.split(r"[/ ]+", acr) if len(a.strip()) >= 3]
+        if any(re.search(rf"\b{re.escape(n)}\b", q) for n in names):
+            scored.append((100, inv["id"]))
+            continue
+        text = profile_text(inv)
+        hits = sum(1 for k, terms in KEYWORDS.items()
+                   if terms and k in q and any(t in text for t in terms))
+        if hits:
+            scored.append((hits, inv["id"]))
+    scored.sort(key=lambda x: -x[0])
+    return [pid for _, pid in scored]
+
+
+def summary_line(inv):
+    return (f"- {inv['id']} {inv.get('acronym') or ''}: {trim(inv['title'], 90)}. "
+            f"Areas: {', '.join(inv.get('areas') or [])}. Runs: {inv.get('test_rows', 0)}. "
+            f"Burned: {trim(inv.get('fuel') or 'n/a', 160)}. "
+            f"Measured: {trim(inv.get('measured') or 'n/a', 120)}. "
+            + (f"Agents/diluents: {inv['agents']}. " if inv.get("agents") else "")
+            + f"O2: {fmt_range(inv.get('o2_range'), '%')}; pressure: {fmt_range(inv.get('pressure_range'), ' atm')}; "
+            f"airflow: {fmt_range(inv.get('airflow_range'), ' cm/s')}.")
+
+
+def detail_block(pid, o2, p_atm):
+    inv = BY_ID[pid]
+    tests = [t for t in TESTS if t["psi_id"] == pid]
+    tests.sort(key=lambda t: closeness(t, o2, p_atm) or -1, reverse=True)
+    rows = []
+    for t in tests[:10]:
+        bits = [f"O2 {t['o2_pct']}%" if t["o2_pct"] is not None else "O2 not recorded",
+                f"{t['pressure_atm']} atm" if t["pressure_atm"] is not None else "pressure not recorded"]
+        if t["airflow_cms"] is not None:
+            bits.append(f"airflow {t['airflow_cms']} cm/s")
+        if t["fuel"]:
+            bits.append(f"sample: {t['fuel']}")
+        if t["outcome"]:
+            bits.append(f"{t.get('outcome_col') or 'outcome'} = {t['outcome']}")
+        if t["o2_note"]:
+            bits.append(f"[{t['o2_note']}]")
+        bits.append("NEAR" if is_near(t, o2, p_atm) else "")
+        rows.append("  - " + "; ".join(b for b in bits if b))
+    return (f"### {pid} {inv.get('acronym') or ''} (DOI {inv.get('doi')})\n"
             f"Changed between runs: {', '.join(inv.get('varied') or []) or 'n/a'}\n"
-            f"Objectives: {(inv.get('objectives') or '')[:700]}\n"
-            f"Hypothesis: {(inv.get('hypothesis') or '')[:400]}\n"
-            f"Research impacts: {(inv.get('impacts') or '')[:500]}\n"
-            f"Runs closest to this habitat:\n" + "\n".join(rows))
-    return "\n\n".join(blocks)
+            f"Objectives: {trim(inv.get('objectives'), 600)}\n"
+            f"Hypothesis: {trim(inv.get('hypothesis'), 300)}\n"
+            f"Research impacts: {trim(inv.get('impacts'), 400)}\n"
+            f"Runs closest to this habitat (NEAR = {NEAR_RULE_TEXT}):\n" + "\n".join(rows))
+
+
+def build_context(question):
+    """All 24 investigations in summary, plus details for the best matches to the
+    habitat and for anything the question mentions. Independent of UI filters."""
+    o2, p_atm = STATE["o2_pct"], STATE["pressure_psi"] / PSI_PER_ATM
+    top = [r["id"] for r in rank(area="all", limit=5)["results"]]
+    named = [pid for pid in mentioned(question) if pid not in top][:5]
+    summary = "\n".join(summary_line(inv) for inv in CATALOG)
+    details = "\n\n".join(detail_block(pid, o2, p_atm) for pid in top + named)
+    return (f"ALL {len(CATALOG)} NASA PSI COMBUSTION INVESTIGATIONS (summary):\n{summary}\n\n"
+            f"DETAILED DATA (most relevant to this habitat"
+            + (f", plus {', '.join(named)} matched from the question" if named else "")
+            + f"):\n{details}\n\n{OUTSIDE_PSI}"), top + named
 
 
 SYSTEM = """You are FlameWatch, a fire-safety assistant for crewed space habitats, used by
-aerospace engineers and students. You get NASA PSI combustion data for the experiments most
-relevant to the user's habitat.
+aerospace engineers and students. You get a summary of ALL NASA PSI combustion investigations,
+detailed test rows for the most relevant ones, and a few NASA results from outside PSI.
 
 How to answer:
-- Lead with a direct, useful answer in 1-2 sentences. Then 2-4 short bullet points of support.
-- Ground claims in the NASA data and cite the PSI ID, e.g. (PSI-99).
-- You MAY use well-established combustion and fire-safety science to interpret the data
-  (e.g. higher oxygen raises flammability, thin fabrics ignite more easily than thick plastics,
-  in microgravity airflow feeds a fire because there is no buoyancy). Mark such points with
-  "(general fire science)" so readers can tell them apart from NASA data.
-- If the data has a real gap that matters for the question, say so in ONE sentence at the end,
-  and name the experiment that would fill it. Don't list every limitation.
-- Never invent numbers. If a value has unclear units, don't quote it.
-- Under 180 words. Use Markdown: **bold** for the key point, "- " for bullets. No headings."""
+- Lead with a direct, useful answer in 1-2 sentences, then 2-4 short bullet points of support.
+- Ground claims in the data and cite the PSI ID, e.g. (PSI-69). Use the summary list to find any
+  investigation relevant to the question, not only the detailed ones.
+- If the user's exact condition isn't covered, first say what the data shows at other conditions
+  (with the PSI ID and the conditions), then say what's missing.
+- Facts marked "NOT in the PSI database" may be used; say they come from NASA results outside PSI.
+- You MAY use well-established combustion and fire-safety science to interpret the data. Mark such
+  points with "(general fire science)".
+- Never invent numbers. If a value's units are unclear, don't quote it.
+- Never mention truncation, missing text, or how the context was assembled.
+- Under 180 words. Markdown: **bold** for the key point, "- " for bullets. No headings."""
 
 
 @app.post("/api/ask")
 def ask(q: Question):
-    top = rank(limit=8)["results"]
     st = get_state()
-    context = build_context(top)
-    prompt = (f"Current habitat: {STATE.get('label', st.get('scenario'))}, {st['o2_pct']}% O2, "
+    context, used = build_context(q.question)
+    prompt = (f"Current habitat: {st.get('label') or st.get('scenario')}, {st['o2_pct']}% O2, "
               f"{st['pressure_psi']} psi, smoke {st['smoke']}/100, temp {st['temp_c']} C, "
               f"fire risk {st['risk']['score']}/100 ({st['risk']['level']}).\n\n"
-              f"NASA PSI data (most relevant first):\n{context}\n\nQuestion: {q.question}")
+              f"{context}\n\nQuestion: {q.question}")
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         return {"answer": "AI is not connected yet (set ANTHROPIC_API_KEY). Most relevant "
-                          "experiments right now: " + ", ".join(f"{r['id']} {r['acronym']}" for r in top[:5]),
-                "sources": [r["id"] for r in top]}
+                          "experiments right now: " + ", ".join(used[:5]), "sources": used}
     import anthropic
     client = anthropic.Anthropic(api_key=key)
     msg = client.messages.create(
@@ -322,9 +448,11 @@ def ask(q: Question):
         messages=[{"role": "user", "content": prompt}])
     # The reply can contain thinking blocks before the answer; keep only the text.
     answer = "\n".join(b.text for b in msg.content if getattr(b, "type", "") == "text").strip()
+    answer = re.sub(r"\s*\((?:the )?source text (?:is|was) truncated\)", "", answer, flags=re.I)
     if not answer:
         answer = "The AI didn't return an answer. Try asking again."
-    return {"answer": answer, "sources": [r["id"] for r in top]}
+    return {"answer": answer, "sources": used}
+
 
 # ---------- frontend ----------
 

@@ -34,6 +34,7 @@
     ],
     "fuel_kind": "gas",
     "crew_relevance": 2,
+    "agents": "Nitrogen as diluent",
     "fuel": "Gaseous ethylene from a porous spherical burner; normal flames (fuel flows out) and inverse flames (oxygen flows out)",
     "measured": "Cameras, radiometers, photomultiplier tubes, thermocouples; soot-inception limits",
     "o2_range": [
@@ -50,14 +51,14 @@
       "C3H8"
     ],
     "varied": [
-      "Flame Type (2 values)",
-      "XO2 (60 values)",
-      "mO2 (mg/s) (114 values)",
-      "mN2 (mg/s) (209 values)",
-      "mtot (mg/s) (254 values)",
-      "XC2H4 initial (120 values)",
-      "pinit (atm) (129 values)",
-      "pmean (atm) (174 values)"
+      "Flame type (2 values)",
+      "Oxygen (mole fraction) (60 values)",
+      "Oxygen flow (mg/s) (114 values)",
+      "Nitrogen flow (mg/s) (209 values)",
+      "Total gas flow (mg/s) (254 values)",
+      "Initial ethylene (mole fraction) (120 values)",
+      "Initial pressure (atm) (129 values)",
+      "Mean pressure (atm) (174 values)"
     ],
     "fixed": [],
     "test_rows": 327
@@ -102,9 +103,9 @@
     "airflow_range": null,
     "samples": [],
     "varied": [
-      "Burner Size (mm) (2 values)",
-      "Fuel Bottle (4 values)",
-      "Oxygen Conc (percent) (10 values)"
+      "Burner size (mm) (2 values)",
+      "Fuel mix (4 values)",
+      "Oxygen (%) (10 values)"
     ],
     "fixed": [],
     "test_rows": 18
@@ -151,7 +152,7 @@
     "varied": [
       "Fuel MFC (2 values)",
       "N2 MFC (4 values)",
-      "Fuel Bottle (30 values)",
+      "Fuel mix (30 values)",
       "Fuel conc. Range (18 values)"
     ],
     "fixed": [],
@@ -197,8 +198,8 @@
     "airflow_range": null,
     "samples": [],
     "varied": [
-      "Mesh Polarity (2 values)",
-      "Fuel Bottle (4 values)",
+      "Electric field polarity (2 values)",
+      "Fuel mix (4 values)",
       "Fuel Conc (8 values)"
     ],
     "fixed": [],
@@ -244,8 +245,8 @@
     "airflow_range": null,
     "samples": [],
     "varied": [
-      "Atmosphere* (9 values)",
-      "Fuel Bottle (16 values)"
+      "Atmosphere (9 values)",
+      "Fuel mix (16 values)"
     ],
     "fixed": [],
     "test_rows": 18
@@ -281,6 +282,8 @@
     ],
     "fuel_kind": "solid",
     "crew_relevance": 3,
+    "agents": "Nitrogen added to lower oxygen below 21%",
+    "airflow_note": "Recorded as fan and air-speed settings; units unclear (up to 40 cm/s per NASA's description)",
     "fuel": "SIBAL fabric strips (1 to 2 cm), PMMA rods (1/4 to 1/2 inch) and thin PMMA films, Nomex",
     "measured": "Flame growth and spread rate, radiometer, O\u2082, CO\u2082 and CO before and after each burn",
     "o2_range": [
@@ -301,11 +304,11 @@
       "1 cm wide 200 micron thick PMMA"
     ],
     "varied": [
-      "Fuel Sample Material (51 values)",
+      "Sample material (51 values)",
       "Flow restrictor (3 values)",
-      "Fan display (99 values)",
-      "Air display (90 values)",
-      "Calibrated initial O2 % by vol (50 values)"
+      "Fan setting (units unclear) (99 values)",
+      "Air speed setting (units unclear) (90 values)",
+      "Initial oxygen (% by volume) (50 values)"
     ],
     "fixed": [],
     "test_rows": 129
@@ -341,6 +344,7 @@
     ],
     "fuel_kind": "solid",
     "crew_relevance": 3,
+    "agents": "Nitrogen released to extinguish flames (similar to the ISS extinguishing approach)",
     "fuel": "Cotton-fiberglass fabric (SIBAL), Nomex and PMMA plastic as 1 to 2 cm strips, slabs and spheres; wax candles",
     "measured": "Top and edge video: flame size, shape, colour, spread rate, quenching; nitrogen suppression",
     "o2_range": [
@@ -361,7 +365,7 @@
       "1 cm sphere"
     ],
     "varied": [
-      "Fuel Sample Material (34 values)"
+      "Sample material (31 values)"
     ],
     "fixed": [],
     "test_rows": 122
@@ -396,6 +400,7 @@
     ],
     "fuel_kind": "liquid droplet",
     "crew_relevance": 1,
+    "agents": "Nitrogen and helium as diluents",
     "fuel": "Free-floating or fiber-tethered droplets of n-dodecane, farnesane and dodecane/iso-dodecane mixes",
     "measured": "Black-and-white camera (droplet size), UV camera (OH* emission, flame size)",
     "o2_range": [
@@ -455,7 +460,10 @@
     "crew_relevance": 2,
     "fuel": "No fire: Arizona Red Dust released from Mylar bags (tests smoke-vs-dust sensing)",
     "measured": "Airborne particle counts",
-    "o2_range": null,
+    "o2_range": [
+      21.0,
+      21.0
+    ],
     "pressure_range": [
       1.0,
       1.0
@@ -467,7 +475,7 @@
       "Sampled Location (2 values)"
     ],
     "fixed": [
-      "Sample Material: Arizona Road Dust (ARD, Fine) in combina"
+      "Sample material: Arizona Road Dust (ARD, Fine) in combina"
     ],
     "test_rows": 2
   },
@@ -571,6 +579,7 @@
     ],
     "fuel_kind": "liquid droplet",
     "crew_relevance": 2,
+    "agents": "Helium or nitrogen as the diluent gas (O\u2082/He or O\u2082/N\u2082 atmospheres)",
     "fuel": "Liquid droplets 1.5 to 5 mm: iso-octane, n-octane, heptane and mixtures, in O\u2082/N\u2082 or O\u2082/He",
     "measured": "Droplet and flame diameter over time, extinction",
     "o2_range": [
@@ -594,15 +603,15 @@
       "Propanol (95%) Glycerol (5%) (mixture)"
     ],
     "varied": [
-      "Sample (Fuel Type) (8 values)",
-      "Initial Droplet Diameter (mm) (1.5 - 5)",
-      "Ambient Gas Mixture (O2/N2 or O2/He)",
-      "Oxygen Mole Fraction (0.17; 0.21;0.25; 0.3)",
-      "Ambient Pressure (atm) (0.5; 1.0; 1.5; 2.0; or 3.0)",
-      "Flow Velocity (cm/s) (0.1 - 5)"
+      "Fuel (8 values)",
+      "Initial droplet diameter (mm) (1.5 - 5)",
+      "Gas mixture (O2/N2 or O2/He)",
+      "Oxygen (mole fraction) (0.17; 0.21;0.25; 0.3)",
+      "Pressure (atm) (0.5; 1.0; 1.5; 2.0; or 3.0)",
+      "Flow velocity (cm/s) (0.1 - 5)"
     ],
     "fixed": [
-      "Ambient Temperature (C): 25"
+      "Temperature (\u00b0C): 25"
     ],
     "test_rows": 8
   },
@@ -636,6 +645,7 @@
     ],
     "fuel_kind": "liquid droplet",
     "crew_relevance": 2,
+    "agents": "CO\u2082 and helium added to the chamber atmosphere to test suppression; nitrogen as the usual diluent",
     "fuel": "Liquid droplets about 1.5 to 4 mm: methanol and heptane, some with CO\u2082 or helium added",
     "measured": "Droplet diameter, flame extinction diameter, burning rate, burn time; limiting oxygen index",
     "o2_range": [
@@ -653,12 +663,12 @@
     ],
     "varied": [
       "Fuel (2 values)",
-      "Ambient pressure; mmHg (183 values)",
-      "O initial ambient composition; mole fraction (15 values)",
-      "N initial ambient composition; mole fraction (33 values)",
-      "CO initial ambient composition; mole fraction (14 values)",
-      "He initial ambient composition; mole fraction (10 values)",
-      "Droplet initial diameter; mm (164 values)"
+      "Pressure (mmHg) (183 values)",
+      "Initial oxygen (mole fraction) (15 values)",
+      "Initial nitrogen (mole fraction) (33 values)",
+      "Initial CO\u2082 (mole fraction) (14 values)",
+      "Initial helium (mole fraction) (10 values)",
+      "Initial droplet diameter (mm) (164 values)"
     ],
     "fixed": [],
     "test_rows": 274
@@ -712,13 +722,13 @@
     ],
     "varied": [
       "Material (3 values)",
-      "Percent O2 (2 values)",
+      "Oxygen (%) (2 values)",
       "Flow Direction (2 values)"
     ],
     "fixed": [
       "Sample Thickness (cm): 0.37",
       "Sample Width (cm): 94",
-      "Air Flow (cm/s): 20",
+      "Airflow: 20",
       "Ignition Power (W): 182"
     ],
     "test_rows": 4
@@ -775,13 +785,13 @@
     ],
     "varied": [
       "Material (6 values)",
-      "Samle Thickness (7 values)",
+      "Sample thickness (7 values)",
       "Ignition Power (W) (2 values)",
       "Flow Direction (2 values)"
     ],
     "fixed": [
       "Sample Width (cm): 5 cm",
-      "Air Flow (cm/s): 20 cm/s"
+      "Airflow: 20 cm/s"
     ],
     "test_rows": 15
   },
@@ -839,7 +849,7 @@
       "Material: SIBAL Fabric",
       "Sample Thickness: .33 cm",
       "Sample Width: 40.6 cm",
-      "Air Flow: 30 cm/s"
+      "Airflow: 30 cm/s"
     ],
     "test_rows": 2
   },
@@ -875,7 +885,10 @@
     "crew_relevance": 3,
     "fuel": "Heated Kapton, silicone, lampwick, Teflon and Pyrell fire-retardant foam",
     "measured": "Smoke particle size (DustTrak, ionization detector, M-pass), aging time",
-    "o2_range": null,
+    "o2_range": [
+      21.0,
+      21.0
+    ],
     "pressure_range": [
       1.0,
       1.0
@@ -892,7 +905,7 @@
       "Teflon"
     ],
     "varied": [
-      "Sample Type (5 values)",
+      "Sample material (5 values)",
       "Inlet velocity (cm/s) (5 values)"
     ],
     "fixed": [],
@@ -930,7 +943,10 @@
     "crew_relevance": 3,
     "fuel": "Heated (smouldering, not flaming) spacecraft materials: Teflon, Kapton, silicone rubber, lampwick, dibutyl phthalate",
     "measured": "Two commercial smoke detectors, thermophoretic soot samplers (electron microscope), sample mass loss",
-    "o2_range": null,
+    "o2_range": [
+      21.0,
+      21.0
+    ],
     "pressure_range": [
       1.0,
       1.0
@@ -946,8 +962,8 @@
       "Lampwick: same conditions as 1-4"
     ],
     "varied": [
-      "Sample Material (5 values)",
-      "Air Flow (cm/s) (2 values)"
+      "Sample material (5 values)",
+      "Airflow (2 values)"
     ],
     "fixed": [],
     "test_rows": 8
@@ -1036,7 +1052,10 @@
     "crew_relevance": 2,
     "fuel": "Coflow jet flames from 0.41, 0.76 and 1.6 mm nozzles: methane, ethylene, propane, propylene",
     "measured": "Flame length, smoke point (when soot appears), radiative loss, coflow velocity",
-    "o2_range": null,
+    "o2_range": [
+      21.0,
+      21.0
+    ],
     "pressure_range": [
       1.0,
       1.0
@@ -1055,11 +1074,11 @@
     ],
     "varied": [
       "Fuel (7 values)",
-      "Nozzle (mm) (3 values)",
-      "Fuel Rate (sccm) (284 values)",
-      "Fuel Rate (mg/s) (275 values)",
-      "HC Fuel Rate (mg/s) (269 values)",
-      "Air Rate (cm/s) (62 values)"
+      "Nozzle diameter (mm) (3 values)",
+      "Fuel flow (sccm) (284 values)",
+      "Fuel flow (mg/s) (275 values)",
+      "Hydrocarbon fuel flow (mg/s) (269 values)",
+      "Air speed (cm/s) (62 values)"
     ],
     "fixed": [],
     "test_rows": 469
@@ -1215,6 +1234,7 @@
     ],
     "fuel_kind": "gas",
     "crew_relevance": 2,
+    "agents": "Nitrogen as diluent",
     "fuel": "Propane, butane, pentane and ethane from a spherical burner; inverse flames used up to 85% oxygen",
     "measured": "Cameras, radiometers, photomultiplier tubes, thermocouples; cool-flame and hot-flame behaviour",
     "o2_range": [
@@ -1235,13 +1255,12 @@
       "50% butane"
     ],
     "varied": [
-      "Flame Type (3 values)",
+      "Flame type (2 values)",
       "Fuel (7 values)",
-      "approx p (bar) (11 values)",
-      "XO2 (12 values)",
-      "O2 flow rate (mg/s) (30 values)",
-      "Self -ext or flow term (3 values)",
-      "Xf (14 values)"
+      "Pressure (bar) (11 values)",
+      "Oxygen (mole fraction) (12 values)",
+      "Oxygen flow (mg/s) (30 values)",
+      "Fuel fraction (mole fraction) (14 values)"
     ],
     "fixed": [],
     "test_rows": 333
