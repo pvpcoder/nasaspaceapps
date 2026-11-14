@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FlameWatch</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>FlameWatch</h1>
+    <p>Habitat fire safety from NASA microgravity combustion data</p>
+    <span id="source-badge" class="badge">scenario</span>
+  </header>
+
+  <main>
+    <!-- 1. Live habitat panel -->
+    <section id="habitat" class="card">
+      <h2>Habitat conditions</h2>
+      <label>Scenario
+        <select id="scenario"></select>
+      </label>
+      <div class="readings">
+        <div><span class="k">Oxygen</span><span id="r-o2" class="v">-</span></div>
+        <div><span class="k">Pressure</span><span id="r-p" class="v">-</span></div>
+        <div><span class="k">Smoke</span><span id="r-smoke" class="v">-</span></div>
+        <div><span class="k">Temp</span><span id="r-temp" class="v">-</span></div>
+      </div>
+      <div id="risk" class="risk green">
+        <div class="risk-label">Fire risk</div>
+        <div id="risk-score" class="risk-score">-</div>
+        <div id="risk-parts" class="risk-parts"></div>
+      </div>
+      <p class="note">Oxygen is simulated with a knob on the sensor box. Smoke, temperature and pressure are real readings.</p>
+    </section>
+
+    <!-- 2. Ranked experiments -->
+    <section id="ranked" class="card wide">
+      <div class="row">
+        <h2>Most relevant NASA experiments</h2>
+        <select id="area">
+          <option value="all">All safety areas</option>
+          <option value="prevention">Prevention</option>
+          <option value="detection">Detection</option>
+          <option value="suppression">Suppression</option>
+        </select>
+      </div>
+      <ol id="rank-list"></ol>
+    </section>
+
+    <!-- 3. AI chat -->
+    <section id="chat" class="card">
+      <h2>Ask FlameWatch</h2>
+      <div id="chat-log"></div>
+      <form id="chat-form">
+        <input id="chat-input" placeholder="Which materials are riskiest at this oxygen level?" autocomplete="off">
+        <button>Ask</button>
+      </form>
+    </section>
+
+    <!-- 4. Knowledge gaps -->
+    <section id="gaps" class="card wide">
+      <h2>Where NASA has data (and where it doesn't)</h2>
+      <canvas id="gap-chart" height="120"></canvas>
+      <p class="note">Each dot is one NASA test run. The star is your habitat. Empty areas near the star are knowledge gaps. No lunar-gravity fire data exists in PSI yet.</p>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
