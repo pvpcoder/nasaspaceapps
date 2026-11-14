@@ -156,7 +156,13 @@ select, input, button { font: inherit; color: inherit; }
 .q:hover { border-color: var(--ink); }
 .msg { margin: 0; white-space: pre-wrap; font-size: 15px; }
 .msg.user { align-self: flex-end; background: var(--ink); color: #fff; padding: 8px 12px; border-radius: 3px; max-width: 90%; }
-.msg.bot { border-left: 3px solid var(--caution); padding: 2px 0 2px 12px; }
+.msg.bot { border-left: 3px solid var(--caution); padding: 2px 0 2px 12px; white-space: normal; }
+.msg.bot p { margin: 0 0 8px; }
+.msg.bot ul, .msg.bot ol { margin: 0 0 8px; padding-left: 20px; }
+.msg.bot li { margin-bottom: 4px; }
+.msg.bot strong { font-weight: 600; }
+.msg.bot .psi { font-weight: 600; color: var(--prevent); }
+.msg.bot code { font-size: 13px; background: var(--rack); padding: 0 4px; border-radius: 2px; }
 #chat-form { display: flex; gap: 8px; }
 #chat-form input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 3px; background: #fff; }
 #chat-form button { background: var(--ink); color: #fff; border: 0; border-radius: 3px; padding: 0 18px; font-weight: 600; cursor: pointer; }

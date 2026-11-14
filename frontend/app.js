@@ -244,7 +244,7 @@ async function ask(q) {
   try {
     const d = await api("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question: q }) });
-    pending.textContent = d.answer;
+    pending.innerHTML = renderMarkdown(d.answer);
   } catch {
     pending.textContent = "The server didn’t answer. Check it’s running, then ask again.";
   }
@@ -258,8 +258,36 @@ $("chat-form").addEventListener("submit", (e) => {
 });
 document.querySelectorAll(".q").forEach((b) => b.addEventListener("click", () => ask(b.textContent)));
 
+// Small, safe Markdown renderer for AI answers: escapes HTML first,
+// then handles **bold**, *italic*, `code` and "- " / "1. " lists.
+function renderMarkdown(md) {
+  const inline = (t) => esc(t)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, "$1<em>$2</em>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\(?(PSI-\d+)\)?/g, (m, id) => m.replace(id, `<b class="psi">${id}</b>`));
+  const out = [];
+  let list = null;
+  for (const raw of String(md || "").split(/\r?\n/)) {
+    const line = raw.trim();
+    const ul = line.match(/^[-*•]\s+(.*)/), ol = line.match(/^\d+[.)]\s+(.*)/);
+    if (ul || ol) {
+      const tag = ul ? "ul" : "ol";
+      if (!list || list.tag !== tag) { if (list) out.push(`</${list.tag}>`); list = { tag }; out.push(`<${tag}>`); }
+      out.push(`<li>${inline((ul || ol)[1])}</li>`);
+      continue;
+    }
+    if (list) { out.push(`</${list.tag}>`); list = null; }
+    if (!line) continue;
+    const h = line.match(/^#{1,6}\s+(.*)/);
+    out.push(h ? `<p><strong>${inline(h[1])}</strong></p>` : `<p>${inline(line)}</p>`);
+  }
+  if (list) out.push(`</${list.tag}>`);
+  return out.join("");
+}
+
 function addMsg(text, who) {
-  const el = document.createElement("p");
+  const el = document.createElement("div");
   el.className = `msg ${who}`;
   el.textContent = text;
   $("chat-log").appendChild(el);

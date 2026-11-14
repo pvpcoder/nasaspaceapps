@@ -247,29 +247,57 @@ class Question(BaseModel):
 
 
 def build_context(top):
-    lines = []
+    o2, p_atm = STATE["o2_pct"], STATE["pressure_psi"] / PSI_PER_ATM
+    blocks = []
     for r in top:
         inv = BY_ID[r["id"]]
-        sample = [t for t in TESTS if t["psi_id"] == r["id"]][:15]
-        lines.append(
-            f"### {r['id']} {r['acronym']} - {r['title']} (DOI {inv.get('doi')})\n"
-            f"Safety areas: {', '.join(r['areas'])}. Fuel: {r['fuel_kind']}. "
-            f"Tests: {r['tests_total']}, near current conditions: {r['tests_near']}. "
-            f"O2 range tested: {r['o2_range']}\n"
-            f"Objectives: {(inv.get('objectives') or '')[:800]}\n"
-            f"Hypothesis: {(inv.get('hypothesis') or '')[:500]}\n"
-            f"Impacts: {(inv.get('impacts') or '')[:600]}\n"
-            f"Sample test rows (o2_pct, pressure_atm, airflow_cms, fuel, outcome): "
-            + "; ".join(f"({t['o2_pct']}, {t['pressure_atm']}, {t['airflow_cms']}, {t['fuel']}, {t['outcome']})"
-                        for t in sample))
-    return "\n\n".join(lines)
+        tests = [t for t in TESTS if t["psi_id"] == r["id"]]
+        # The runs closest to the habitat, not just the first rows of the file.
+        tests.sort(key=lambda t: closeness(t, o2, p_atm) or -1, reverse=True)
+        rows = []
+        for t in tests[:12]:
+            bits = [f"O2 {t['o2_pct']}%" if t["o2_pct"] is not None else "O2 not recorded",
+                    f"{t['pressure_atm']} atm" if t["pressure_atm"] is not None else "pressure not recorded"]
+            if t["airflow_cms"] is not None:
+                bits.append(f"airflow {t['airflow_cms']} cm/s")
+            if t["fuel"]:
+                bits.append(f"fuel/sample: {t['fuel']}")
+            if t["outcome"]:
+                bits.append(f"{t.get('outcome_col') or 'outcome'} = {t['outcome']}")
+            if t["o2_note"]:
+                bits.append(f"[{t['o2_note']}]")
+            rows.append("  - " + "; ".join(bits))
+        blocks.append(
+            f"### {r['id']} {r['acronym']}: {inv['title']} (DOI {inv.get('doi')})\n"
+            f"Safety areas: {', '.join(r['areas'])}. Runs: {r['tests_total']}, near this habitat: {r['tests_near']}.\n"
+            f"Hardware: {inv.get('hardware') if isinstance(inv.get('hardware'), str) else 'n/a'}\n"
+            f"What burned: {inv.get('fuel', 'n/a')}\n"
+            f"Measured: {inv.get('measured', 'n/a')}\n"
+            f"Oxygen range tested: {inv.get('o2_range')}; pressure range (atm): {inv.get('pressure_range')}; "
+            f"airflow (cm/s): {inv.get('airflow_range')}\n"
+            f"Changed between runs: {', '.join(inv.get('varied') or []) or 'n/a'}\n"
+            f"Objectives: {(inv.get('objectives') or '')[:700]}\n"
+            f"Hypothesis: {(inv.get('hypothesis') or '')[:400]}\n"
+            f"Research impacts: {(inv.get('impacts') or '')[:500]}\n"
+            f"Runs closest to this habitat:\n" + "\n".join(rows))
+    return "\n\n".join(blocks)
 
 
-SYSTEM = """You are FlameWatch, a fire-safety assistant for crewed space habitats.
-Answer ONLY from the NASA PSI data provided. Cite the PSI ID (e.g. PSI-69) for every
-claim. If the data does not cover something (e.g. lunar gravity, or the exact oxygen
-level), say so plainly and say what experiment would be needed. Keep answers under
-200 words, in plain language for engineers and students."""
+SYSTEM = """You are FlameWatch, a fire-safety assistant for crewed space habitats, used by
+aerospace engineers and students. You get NASA PSI combustion data for the experiments most
+relevant to the user's habitat.
+
+How to answer:
+- Lead with a direct, useful answer in 1-2 sentences. Then 2-4 short bullet points of support.
+- Ground claims in the NASA data and cite the PSI ID, e.g. (PSI-99).
+- You MAY use well-established combustion and fire-safety science to interpret the data
+  (e.g. higher oxygen raises flammability, thin fabrics ignite more easily than thick plastics,
+  in microgravity airflow feeds a fire because there is no buoyancy). Mark such points with
+  "(general fire science)" so readers can tell them apart from NASA data.
+- If the data has a real gap that matters for the question, say so in ONE sentence at the end,
+  and name the experiment that would fill it. Don't list every limitation.
+- Never invent numbers. If a value has unclear units, don't quote it.
+- Under 180 words. Use Markdown: **bold** for the key point, "- " for bullets. No headings."""
 
 
 @app.post("/api/ask")
@@ -277,8 +305,9 @@ def ask(q: Question):
     top = rank(limit=8)["results"]
     st = get_state()
     context = build_context(top)
-    prompt = (f"Current habitat: {st['o2_pct']}% O2, {st['pressure_psi']} psi, "
-              f"smoke {st['smoke']}, temp {st['temp_c']} C, risk {st['risk']['level']}.\n\n"
+    prompt = (f"Current habitat: {STATE.get('label', st.get('scenario'))}, {st['o2_pct']}% O2, "
+              f"{st['pressure_psi']} psi, smoke {st['smoke']}/100, temp {st['temp_c']} C, "
+              f"fire risk {st['risk']['score']}/100 ({st['risk']['level']}).\n\n"
               f"NASA PSI data (most relevant first):\n{context}\n\nQuestion: {q.question}")
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:

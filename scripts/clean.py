@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 
 FIELDS = ["psi_id", "acronym", "table", "row", "o2_pct", "pressure_atm",
-          "airflow_cms", "fuel", "outcome", "o2_note"]
+          "airflow_cms", "fuel", "outcome", "outcome_col", "o2_note"]
 
 # Hand-made tags. "areas": prevention / detection / suppression.
 # "fuel_kind": what burned. "crew_relevance": 1-3, how directly it maps to a
@@ -179,6 +179,9 @@ def clean_table(inv, table_file):
                     "airflow_cms": flow if (flow := num(rec.get(cols["flow"])) if cols["flow"] else None) is not None and flow >= 0 else "",
                     "fuel": (rec.get(cols["fuel"]) or "").strip() if cols["fuel"] else "",
                     "outcome": (rec.get(cols["outcome"]) or "").strip() if cols["outcome"] else "",
+                    # NASA's "µ-g" (microgravity) arrives as "?-g" in some files.
+                    "outcome_col": re.sub(r"\s+", " ", cols["outcome"]).replace("?-g", "microgravity").strip()
+                    if cols["outcome"] else "",
                     "o2_note": "; ".join(notes),
                 })
     return out, cols
