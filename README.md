@@ -30,6 +30,25 @@ pip install anthropic
 
 Without a key, the chat still replies with the top-ranked experiments.
 
+## Deploy (public link)
+
+The dashboard is on GitHub Pages; the backend runs on Render (Pages can't run Python).
+
+```
+GitHub Pages (dashboard)  ──►  Render (backend API)  ◄──  ESP32
+pvpcoder.github.io/nasaspaceapps     flamewatch.onrender.com
+```
+
+1. **Push** this repo to GitHub (`data/tests.csv` and `data/catalog.json` are committed on purpose; Render needs them).
+2. **Render:** render.com → sign in with GitHub → **New → Blueprint** → pick this repo. It reads `render.yaml`. When asked, paste your `ANTHROPIC_API_KEY`. Deploy.
+3. **Check** `https://<your-render-url>/api/health` shows `"ok": true`. If your URL isn't `flamewatch.onrender.com`, update it in `frontend/config.js` and push.
+4. **GitHub Pages:** repo → Settings → Pages → Source: *Deploy from a branch* → `main` / `(root)` → Save. The site is at `https://pvpcoder.github.io/nasaspaceapps/`.
+5. **ESP32:** set `SERVER_URL` to your Render URL.
+
+The Render URL also serves the full dashboard by itself, so it works as a backup link.
+
+Free Render servers sleep after ~15 min idle; the first visit takes up to a minute. Open the site before you present.
+
 ## ESP32 contract
 
 POST JSON to `http://<laptop-ip>:8000/api/reading` about once a second. Every field is optional; send what you have.

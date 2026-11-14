@@ -4,10 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FlameWatch</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <script src="/static/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+  <script src="chart.umd.min.js"></script>
 </head>
 <body>
+  <div id="conn-banner" class="banner" hidden>Connecting to the FlameWatch server… (the free server can take up to a minute to wake up)</div>
   <header>
     <h1>FlameWatch</h1>
     <p>Habitat fire safety from NASA microgravity combustion data</p>
@@ -67,6 +68,7 @@
     </section>
   </main>
 
-  <script src="/static/app.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

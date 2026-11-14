@@ -46,6 +46,11 @@ TAGS = {
 }
 DEFAULT_TAG = {"areas": ["prevention"], "fuel_kind": "modeling", "crew_relevance": 1}
 
+# Experiments with no O2 column that burned in normal cabin air (~21% O2).
+O2_DEFAULT = {"PSI-26": 21.0, "PSI-100": 21.0}
+# NASA notes say pressure varied but wasn't recorded: don't assume 1 atm.
+NO_PRESSURE_ASSUMPTION = {"PSI-20"}
+
 # Force a column choice when the guess is wrong: {"PSI-69": {"o2_pct": "exact header"}}
 OVERRIDES = {}
 
@@ -66,8 +71,18 @@ def pick(headers, patterns, avoid=()):
 def num(x):
     if x is None:
         return None
-    m = re.search(r"-?\d+(\.\d+)?", str(x).replace(",", ""))
+    m = re.search(r"-?\d*\.?\d+", str(x))
     return float(m.group()) if m else None
+
+
+def nums(x):
+    """All values in a cell. NASA summary rows list several, e.g. '21; 26.5; 40'.
+    Ranges like '1.5 - 5' are NOT split (only ';' and 'or')."""
+    if x is None or not str(x).strip():
+        return [None]
+    parts = re.split(r";|\bor\b", str(x))
+    vals = [num(p) for p in parts if num(p) is not None]
+    return vals or [None]
 
 
 def to_pct(v, header):
@@ -76,10 +91,10 @@ def to_pct(v, header):
     return v * 100 if v <= 1.0 and "%" not in header and "percent" not in norm(header) else v
 
 
-def to_atm(v, header):
-    if v is None:
+def to_atm(v, header, cell=""):
+    if v is None or v <= 0:          # 0 = not recorded
         return None
-    h = norm(header)
+    h = norm(header) + " " + str(cell).lower()
     if "mmhg" in h or "torr" in h:
         return v / 760
     if "kpa" in h:
@@ -104,7 +119,7 @@ def clean_table(inv, table_file):
     cols = {
         "o2": ov.get("o2_pct") or pick(headers, [r"percent o2", r"oxygen conc", r"o2 %", r"%.*o2",
                                                    r"xo2 \(init", r"xo2 before", r"^xo2", r"\bo\b.*initial ambient",
-                                                   r"oxygen mole fraction", r"o2"],
+                                                   r"oxygen mole fraction", r"^oxygen$", r"o2"],
                                        avoid=[r"final", r"after", r"co2", r"flow rate", r"mo2"]),
         "p": ov.get("pressure_atm") or pick(headers, [r"pmean", r"ambient pressure", r"pressure",
                                                       r"approx p", r"pinit", r"\bp\b.*\("]),
@@ -123,25 +138,44 @@ def clean_table(inv, table_file):
         if not any(c.strip() for c in r):
             continue
         rec = dict(zip(headers, r + [""] * (len(headers) - len(r))))
-        o2 = to_pct(num(rec.get(cols["o2"])), cols["o2"] or "") if cols["o2"] else None
-        p = to_atm(num(rec.get(cols["p"])), cols["p"] or "") if cols["p"] else None
-        notes = []
-        if p is None and not cols["p"]:
-            # BASS, Saffire etc. ran in normal spacecraft cabin air (~1 atm).
-            p = 1.0
-            notes.append("pressure assumed 1 atm (cabin air)")
-        if inverse and o2 is not None:
-            # Inverse flames: oxygen flows OUT of the burner, so this is burner O2, not cabin air.
-            notes.append("burner O2 (inverse flame)")
-        out.append({
-            "psi_id": inv["id"], "acronym": inv["acronym"], "table": table_file, "row": i,
-            "o2_pct": round(o2, 2) if o2 is not None else "",
-            "pressure_atm": round(p, 3) if p is not None else "",
-            "airflow_cms": num(rec.get(cols["flow"])) if cols["flow"] else "",
-            "fuel": (rec.get(cols["fuel"]) or "").strip() if cols["fuel"] else "",
-            "outcome": (rec.get(cols["outcome"]) or "").strip() if cols["outcome"] else "",
-            "o2_note": "; ".join(notes),
-        })
+        o2_cell = rec.get(cols["o2"]) if cols["o2"] else None
+        p_cell = rec.get(cols["p"]) if cols["p"] else None
+        o2_list = nums(o2_cell)
+        p_list = nums(p_cell)
+        multi = len(o2_list) > 1 or len(p_list) > 1
+        for o2_raw in o2_list:
+            for p_raw in p_list:
+                notes = []
+                o2 = to_pct(o2_raw, cols["o2"]) if cols["o2"] else None
+                if o2 is not None and o2 > 100 and o2 / 100 <= 100:
+                    o2 /= 100                      # NASA typo, e.g. "3400%" for 34.00%
+                    notes.append("O2 typo corrected")
+                if o2 is not None and not (0 < o2 <= 100):
+                    o2 = None
+                if o2 is None and not cols["o2"] and inv["id"] in O2_DEFAULT:
+                    o2 = O2_DEFAULT[inv["id"]]
+                    notes.append("O2 assumed 21% (cabin air)")
+                p = to_atm(p_raw, cols["p"] or "", p_cell or "") if cols["p"] else None
+                if p is not None and not (0 < p < 10):
+                    p = None
+                if p is None and not cols["p"] and inv["id"] not in NO_PRESSURE_ASSUMPTION:
+                    # BASS, Saffire etc. ran in normal spacecraft cabin air (~1 atm).
+                    p = 1.0
+                    notes.append("pressure assumed 1 atm (cabin air)")
+                if inverse and o2 is not None:
+                    # Inverse flames: oxygen flows OUT of the burner, so this is burner O2, not cabin air.
+                    notes.append("burner O2 (inverse flame)")
+                if multi:
+                    notes.append("expanded from a NASA summary row")
+                out.append({
+                    "psi_id": inv["id"], "acronym": inv["acronym"], "table": table_file, "row": i,
+                    "o2_pct": round(o2, 2) if o2 is not None else "",
+                    "pressure_atm": round(p, 3) if p is not None else "",
+                    "airflow_cms": num(rec.get(cols["flow"])) if cols["flow"] else "",
+                    "fuel": (rec.get(cols["fuel"]) or "").strip() if cols["fuel"] else "",
+                    "outcome": (rec.get(cols["outcome"]) or "").strip() if cols["outcome"] else "",
+                    "o2_note": "; ".join(notes),
+                })
     return out, cols
 
 

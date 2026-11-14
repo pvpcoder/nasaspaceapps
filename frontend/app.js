@@ -3,9 +3,18 @@ const $ = (id) => document.getElementById(id);
 let lastKey = "";
 let chart;
 
+const API = window.FLAMEWATCH_API || "";
+
 async function api(path, opts) {
-  const r = await fetch(path, opts);
-  return r.json();
+  try {
+    const r = await fetch(API + path, opts);
+    if (!r.ok) throw new Error(r.status);
+    $("conn-banner").hidden = true;
+    return await r.json();
+  } catch (e) {
+    $("conn-banner").hidden = false;
+    throw e;
+  }
 }
 
 // ---- 1. habitat panel ----
@@ -114,5 +123,8 @@ function markHabitat(s) {
   chart.update("none");
 }
 
-buildChart().then(refreshState);
-setInterval(refreshState, 1000);
+async function start() {
+  try { await buildChart(); } catch { setTimeout(start, 3000); return; }
+  setInterval(() => refreshState().catch(() => {}), 1000);
+}
+start();

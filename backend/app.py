@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -27,6 +27,9 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 
 app = FastAPI(title="FlameWatch")
+
+# Lets the GitHub Pages site (a different domain) call this API.
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # ---------- data ----------
 
@@ -130,7 +133,9 @@ def rank(area: str = "all", limit: int = 30):
         scored = [(closeness(t, o2, p_atm), t) for t in tests]
         scored = [x for x in scored if x[0] is not None]
         best = max((s for s, _ in scored), default=0.0)
-        near = sum(1 for s, _ in scored if s > 0.5)
+        # Count original NASA rows (summary rows can expand into several points).
+        n_tests = len({(t["table"], t["row"]) for t in tests})
+        near = len({(t["table"], t["row"]) for s, t in scored if s > 0.5})
         o2s = [t["o2_pct"] for t in tests if t["o2_pct"] is not None]
         # Score = condition match (50) + crew relevance (30) + area match (20)
         area_match = area == "all" or area in inv.get("areas", [])
@@ -141,7 +146,7 @@ def rank(area: str = "all", limit: int = 30):
             "id": inv["id"], "acronym": inv["acronym"], "title": inv["title"],
             "doi": inv.get("doi"), "url": inv["url"], "areas": inv.get("areas", []),
             "fuel_kind": inv.get("fuel_kind"), "score": round(score, 1),
-            "match": round(best, 2), "tests_total": len(tests), "tests_near": near,
+            "match": round(best, 2), "tests_total": n_tests, "tests_near": near,
             "o2_range": [min(o2s), max(o2s)] if o2s else None,
             "objectives": (inv.get("objectives") or "")[:400],
             "why": explain(inv, best, near, area_match),
@@ -159,7 +164,12 @@ def explain(inv, best, near, area_match):
     else:
         bits.append("no test runs near these conditions")
     if inv.get("crew_relevance", 1) >= 3:
-        bits.append(f"burned {inv.get('fuel_kind')} materials like those in a crew cabin")
+        if "emulator" in (inv.get("fuel_kind") or ""):
+            bits.append("gas burner built to imitate burning cabin materials")
+        elif inv.get("fuel_kind") == "smoke":
+            bits.append("measured smoke from cabin materials")
+        else:
+            bits.append(f"burned {inv.get('fuel_kind')} materials like those in a crew cabin")
     if not area_match:
         bits.append("outside the selected safety area")
     return "; ".join(bits)
@@ -226,9 +236,10 @@ def ask(q: Question):
 
 # ---------- frontend ----------
 
-app.mount("/static", StaticFiles(directory=ROOT / "frontend"), name="static")
+@app.get("/api/health")
+def health():
+    return {"ok": True, "investigations": len(CATALOG), "tests": len(TESTS)}
 
 
-@app.get("/")
-def index():
-    return FileResponse(ROOT / "frontend" / "index.html")
+# Must be last: serves the dashboard at "/" (API routes above take priority).
+app.mount("/", StaticFiles(directory=ROOT / "frontend", html=True), name="frontend")

@@ -41,3 +41,4 @@ label { display: flex; flex-direction: column; gap: 4px; color: var(--quiet); fo
 #chat-form input { flex: 1; }
 button { background: var(--accent); color: #1a0c02; border: 0; border-radius: 6px; padding: 6px 14px; font-weight: 600; cursor: pointer; }
 a { color: #7fb2ff; }
+.banner { background: #5a3d12; color: var(--ink); text-align: center; padding: 8px; font-size: 13px; }
