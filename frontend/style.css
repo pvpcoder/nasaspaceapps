@@ -72,6 +72,9 @@ select, input, button { font: inherit; color: inherit; }
 .readings dt { font-size: 14px; color: var(--muted); }
 .readings dd { margin: 0; font: 600 40px/1.1 var(--narrow); font-variant-numeric: tabular-nums; }
 .readings small { font: 500 16px var(--sans); color: var(--muted); margin-left: 4px; }
+.readings.box { grid-template-columns: repeat(3, 1fr); margin-top: -8px; }
+.readings.box dd { font-size: 26px; }
+.readings[hidden] { display: none; }
 
 .lamp { display: flex; justify-content: space-between; align-items: baseline; padding: 20px 20px 18px; border-radius: 3px; border: 2px solid; }
 .lamp-word { font: 600 34px/1 var(--narrow); }

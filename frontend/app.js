@@ -92,6 +92,25 @@ async function refreshState() {
   $("r-smoke").textContent = state.smoke == null ? "–" : Math.round(state.smoke);
   $("r-temp").textContent = fmt(state.temp_c);
 
+  // Sensor-box extras: shown while the box is sending readings.
+  const box = state.box;
+  $("box-status").hidden = !box;
+  let alert = "";
+  if (box) {
+    $("r-crew").textContent = box.crew == null ? "–" : box.crew ? "Yes" : "No";
+    $("r-hatch").textContent = box.hatch_closed == null ? "–" : box.hatch_closed ? "Closed" : "Open";
+    $("r-vent").textContent = box.vent === "closed" ? "Closed" : "Open";
+    if (box.mode === "suppressing") {
+      alert = "Suppression active: CO₂ flood simulated, vent closed. FLEX and FLEX-2 studied putting out flames by diluting the air with CO₂ and helium.";
+    } else if (box.level === "red") {
+      alert = box.crew ? "Crew detected in the module: evacuate, then close the hatch."
+        : box.hatch_closed ? "Module isolated: ready to suppress (press the switch on the box)."
+        : "Module empty: close the hatch, then suppress.";
+    }
+  }
+  $("box-alert").textContent = alert;
+  $("box-alert").hidden = !alert;
+
   const risk = state.risk;
   $("lamp").className = `lamp ${risk.level}`;
   $("lamp-word").textContent = LAMP_WORDS[risk.level];

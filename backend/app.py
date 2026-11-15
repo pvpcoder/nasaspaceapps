@@ -72,8 +72,13 @@ DEFAULT_SCENARIO = "moonbase"
 # Live sensor readings are shared (there's one physical box). The habitat a visitor
 # is looking at is NOT shared: each request says which habitat it means.
 LIVE = {"o2_pct": None, "pressure_psi": None, "smoke": None, "temp_c": None,
-        "dust": None, "flame": None, "updated": 0.0}
+        "dust": None, "flame": None, "updated": 0.0,
+        "crew": None, "hatch_cm": None, "suppress_until": 0.0}
 LIVE_TIMEOUT_S = 10
+
+# Sensor-box extras (PIR, ultrasonic hatch sensor, suppression switch, vent servo)
+SUPPRESS_SECONDS = 15    # how long one press of the box's switch "floods" the module
+HATCH_CLOSED_CM = 8      # ultrasonic: anything closer than this = hatch closed
 
 
 def live_fresh():
@@ -113,6 +118,9 @@ class Reading(BaseModel):
     temp_c: float | None = None
     dust: float | None = None
     flame: bool | None = None
+    crew: bool | None = None           # PIR motion sensor: crew in the module
+    hatch_cm: float | None = None      # ultrasonic distance to the hatch
+    suppress: bool | None = None       # switch pressed since the last reading
 
 
 SEA_LEVEL_PPO2_PSI = 0.21 * 14.696   # ≈ 3.1 psi
@@ -159,15 +167,34 @@ def risk(state):
 
 @app.post("/api/reading")
 def post_reading(r: Reading):
-    LIVE.update({k: v for k, v in r.model_dump().items() if v is not None})
+    data = r.model_dump()
+    suppress = data.pop("suppress")
+    LIVE.update({k: v for k, v in data.items() if v is not None})
     LIVE["updated"] = time.time()
-    # Small reply so the ESP32 can set its LEDs/buzzer from it.
-    return {"level": risk(habitat(sensor=True))["level"]}
+    if suppress:
+        LIVE["suppress_until"] = time.time() + SUPPRESS_SECONDS
+    # Small reply so the ESP32 can set its LEDs, buzzer and vent servo from it.
+    box = box_status()
+    return {"level": box["level"], "mode": box["mode"], "vent": box["vent"]}
+
+
+def box_status():
+    """Module status from the sensor box, judged on the box's own live readings.
+    In microgravity there is no buoyancy, so forced airflow feeds a flame: the box
+    closes its vent on a red alarm or while suppressing."""
+    level = risk(habitat(sensor=True))["level"]
+    suppressing = time.time() < LIVE["suppress_until"]
+    hatch = LIVE["hatch_cm"]
+    return {"level": level, "mode": "suppressing" if suppressing else "normal",
+            "vent": "closed" if suppressing or level == "red" else "open",
+            "crew": LIVE["crew"], "hatch_cm": hatch,
+            "hatch_closed": None if hatch is None else hatch < HATCH_CLOSED_CM}
 
 
 def state_payload(h):
     return {**h, "live": live_fresh(), "risk": risk(h), "scenarios": SCENARIOS,
-            "default_scenario": DEFAULT_SCENARIO}
+            "default_scenario": DEFAULT_SCENARIO,
+            "box": box_status() if live_fresh() else None}
 
 
 @app.get("/api/state")

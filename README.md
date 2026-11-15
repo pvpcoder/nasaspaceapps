@@ -61,7 +61,19 @@ POST JSON to `http://<laptop-ip>:8000/api/reading` about once a second. Every fi
 - `smoke`: MQ sensor scaled to 0–100 on the ESP32
 - `pressure_psi`: BMP280 reading (hPa × 0.0145), or leave it out
 
-The reply is `{"level": "green" | "yellow" | "red"}`. Use it to drive the LEDs and buzzer.
+Sensor-box extras (also optional):
+
+```json
+{"crew": true, "hatch_cm": 5.2, "suppress": false}
+```
+
+- `crew`: PIR motion sensor, someone in the module
+- `hatch_cm`: ultrasonic distance; under 8 cm counts as hatch closed
+- `suppress`: `true` once when the box's switch is pressed; starts 15 s of simulated CO₂ suppression
+
+The reply is `{"level": "green" | "yellow" | "red", "mode": "normal" | "suppressing", "vent": "open" | "closed"}`. Use it to drive the LEDs, buzzer and vent servo. The vent closes on a red alarm and during suppression. `/api/state` includes the same box status under `box` while the box is live.
+
+Firmware: `esp32/flamewatch_node/`. Copy `secrets.example.h` to `secrets.h` and fill in your WiFi first.
 
 If no reading arrives for 10 seconds, the dashboard falls back to the scenario dropdown.
 

@@ -10,3 +10,6 @@ data/*
 
 !data/map.json
 data/photos/
+
+# ESP32 WiFi passwords
+esp32/**/secrets.h

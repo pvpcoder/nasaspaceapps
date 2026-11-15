@@ -37,6 +37,13 @@
         <div><dt>Temperature</dt><dd><span id="r-temp">–</span><small>°C</small></dd></div>
       </dl>
 
+      <dl id="box-status" class="readings box" aria-label="Sensor box module status" hidden>
+        <div><dt>Crew in module</dt><dd id="r-crew">–</dd></div>
+        <div><dt>Hatch</dt><dd id="r-hatch">–</dd></div>
+        <div><dt>Ventilation</dt><dd id="r-vent">–</dd></div>
+      </dl>
+      <p id="box-alert" class="callout" hidden></p>
+
       <div id="lamp" class="lamp green" role="status">
         <span id="lamp-word" class="lamp-word">Nominal</span>
         <span class="lamp-score"><span id="risk-score">0</span> fire risk</span>
@@ -57,7 +64,7 @@
         <p class="note">This is a simple, transparent score for the demo, not a validated fire model.</p>
       </details>
 
-      <p class="note">The sensor box measures smoke, temperature and pressure. Oxygen is set with a dial to simulate the habitat’s air.</p>
+      <p class="note">The sensor box measures temperature, crew presence (motion sensor) and whether the hatch is closed (ultrasonic). Oxygen is set with a dial to simulate the habitat’s air. Its switch triggers suppression, and a servo closes the vent on a red alarm.</p>
     </section>
 
     <section class="experiments" aria-label="NASA experiments">
