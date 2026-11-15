@@ -3,7 +3,7 @@ const $ = (id) => document.getElementById(id);
 const API = window.FLAMEWATCH_API || "";
 const PSI_PER_ATM = 14.696;
 const AREA_WORDS = { prevention: "Preventing fires", detection: "Detecting smoke", suppression: "Putting fires out" };
-const AREA_COLORS = { prevention: "#2c5aa0", detection: "#b9741a", suppression: "#2f7d55" };
+const AREA_COLORS = { prevention: "#2d6cdf", detection: "#c27a12", suppression: "#1f8a5b" };
 const LAMP_WORDS = { green: "Nominal", yellow: "Caution", red: "Warning" };
 
 let lastKey = "";
@@ -21,7 +21,99 @@ let habitatKey = store.get() || "moonbase";
 let followLive = true;   // switch to the sensor box automatically when it sends data
 
 // Query string every request carries, so the server knows which habitat we mean.
-const hp = () => `scenario=${encodeURIComponent(habitatKey)}&sensor=${followLive}`;
+const hp = () => `scenario=${encodeURIComponent(habitatKey)}&sensor=${followLive && !sim}${sim ? simQuery() : ""}`;
+
+// ---------- simulate a fire (demo for judges without the sensor box) ----------
+// A scripted 32-second fire, played through the same risk and vent rules as the real box.
+// Only this browser sees it: each request carries the simulated readings.
+const SIM_LENGTH = 32;
+let sim = null;   // { start, areaBefore } while playing
+const lerp = (a, b, t0, t1, t) => a + (b - a) * Math.max(0, Math.min(1, (t - t0) / (t1 - t0)));
+
+function simFrame(t) {
+  if (t < 3) return { smoke: 0, temp: 22, crew: true, hatch: false, area: "all",
+    phase: 0 };
+  if (t < 10) return { smoke: lerp(0, 75, 3, 9, t), temp: 22, crew: true, hatch: false, area: "detection",
+    phase: 1 };
+  if (t < 15) return { smoke: lerp(70, 92, 10, 15, t), temp: lerp(22, 28, 10, 15, t), flame: t >= 13, crew: true, hatch: false, area: "detection",
+    phase: 2 };
+  if (t < 19) return { smoke: 92, temp: 28, flame: true, crew: false, hatch: t >= 17, area: "suppression",
+    phase: 3 };
+  if (t < 27) return { smoke: lerp(92, 30, 19, 27, t), temp: lerp(28, 24, 19, 27, t), crew: false, hatch: true, suppress: true, area: "suppression",
+    phase: 4 };
+  return { smoke: lerp(30, 4, 27, SIM_LENGTH, t), temp: lerp(24, 22.5, 27, SIM_LENGTH, t), crew: false, hatch: true, area: "suppression",
+    phase: 5 };
+}
+
+// What each habitat calls itself, and what happens there, phase by phase.
+const PLACE = { moonbase: "Moon base module", moon_alt: "Moon base module", rover: "rover cabin", iss: "station module" };
+function simSay(phase) {
+  if (habitatKey === "suit") return [
+    "An astronaut on a spacewalk. The suit holds pure oxygen at 4.3 psi, so its fire risk starts high before anything goes wrong.",
+    "Smoke from an overheating part in the backpack.",
+    "A flame. In pure oxygen, materials that barely burn in normal air can burn fast. That's how the 1967 Apollo 1 cabin fire spread.",
+    "A suit has no vent to close and no room to leave. The astronaut's only move is to get back to the airlock.",
+    "This is why the answer for suits is prevention: anything inside has to pass NASA's flammability test at the oxygen level it will see.",
+    "Fire out. The suit is the hardest place to fight a fire, so it's where material choice matters most.",
+  ][phase];
+  const place = PLACE[habitatKey] || "module";
+  const gravity = habitatKey === "iss" ? "in microgravity" : "in low gravity";
+  return [
+    `A cable bundle starts to overheat in the ${place}. Everything still reads normal.`,
+    `Smoke builds. At 60 the vent closes, because ${gravity} the airflow does much of the work of feeding a fire. The list now shows NASA's smoke-detection experiments.`,
+    `Heat rises and a flame appears. Fire risk hits Warning and the alarm sounds. Crew are still in the ${place}, so they get out first.`,
+    `Crew out, hatch closed: the ${place} is sealed off. The list switches to NASA's experiments on putting fires out.`,
+    "CO₂ floods the cabin. FLEX and FLEX-2 on the space station studied exactly this: putting flames out by diluting the air.",
+    "Fire out. Once smoke and heat drop back down, the vent reopens to clear the air for the crew.",
+  ][phase];
+}
+
+function simNow() { return sim ? (performance.now() - sim.start) / 1000 : 0; }
+
+function simQuery() {
+  const f = simFrame(simNow());
+  return `&sim_smoke=${f.smoke.toFixed(1)}&sim_temp=${f.temp.toFixed(1)}&sim_flame=${!!f.flame}`
+    + `&sim_crew=${!!f.crew}&sim_hatch=${!!f.hatch}&sim_suppress=${!!f.suppress}`;
+}
+
+function simShow() {
+  const t = simNow(), f = simFrame(t);
+  $("sim-caption").innerHTML = `${esc(simSay(f.phase))}<small>Simulated: only you can see this.</small>`
+    + `<div class="sim-bar"><i style="width:${Math.min(100, t / SIM_LENGTH * 100)}%"></i></div>`;
+  if ($("area").value !== f.area) $("area").value = f.area;
+}
+
+function startSim() {
+  sim = { start: performance.now(), areaBefore: $("area").value };
+  $("sim-btn").textContent = "Stop simulation";
+  $("sim-btn").classList.add("running");
+  $("sim-caption").hidden = false;
+  $("sim-hint").hidden = true;
+  simShow();
+  // Make sure the drawing is on screen while it plays.
+  ($("scene3d").offsetParent ? $("scene3d") : $("scene")).scrollIntoView({ block: "nearest", behavior: "smooth" });
+  refreshState().catch(() => {});
+}
+
+function stopSim() {
+  if (!sim) return;
+  $("area").value = sim.areaBefore;
+  sim = null;
+  $("sim-btn").textContent = "Simulate a fire";
+  $("sim-btn").classList.remove("running");
+  $("sim-caption").hidden = true;
+  $("sim-hint").hidden = false;
+  lastKey = "";
+  refreshState().catch(() => {});
+}
+
+$("sim-btn").addEventListener("click", () => (sim ? stopSim() : startSim()));
+setInterval(() => {
+  if (!sim) return;
+  if (simNow() >= SIM_LENGTH) return stopSim();
+  simShow();
+  refreshState().catch(() => {});
+}, 500);
 const selected = new Set();   // PSI IDs ticked for comparison (max 3)
 
 async function api(path, opts) {
@@ -65,10 +157,15 @@ function thumb(x, size = 40) {
 }
 
 // ---------- habitat panel ----------
+let stateReq = 0;   // newest request wins, so a slow reply can't overwrite a newer one
 async function refreshState() {
+  const mine = ++stateReq;
   try {
-    state = await api(`/api/state?${hp()}`);
+    const s = await api(`/api/state?${hp()}`);
+    if (mine !== stateReq) return;
+    state = s;
   } catch (e) {
+    if (mine !== stateReq) return;
     // A saved habitat that no longer exists: fall back to the default.
     if (habitatKey !== "moonbase") { habitatKey = "moonbase"; store.set(habitatKey); }
     throw e;
@@ -84,8 +181,10 @@ async function refreshState() {
   if (document.activeElement !== sel) sel.value = state.source === "sensor" ? "live" : habitatKey;
 
   const usingSensor = state.source === "sensor";
-  $("source").textContent = usingSensor ? "Live from sensor box" : state.live ? "Preset habitat (sensor box connected)" : "Preset habitat";
+  $("source").textContent = state.simulated ? "Simulated fire"
+    : usingSensor ? "Live from sensor box" : state.live ? "Preset habitat (sensor box connected)" : "Preset habitat";
   $("source").classList.toggle("live", usingSensor);
+  $("source").classList.toggle("sim", !!state.simulated);
 
   $("r-o2").textContent = fmt(state.o2_pct);
   $("r-p").textContent = fmt(state.pressure_psi);
@@ -118,10 +217,13 @@ async function refreshState() {
       alert = "Oxygen-rich air: a fire would spread faster, so heat detection is more sensitive." + rise;
     }
   }
+  // A spacesuit has no crew sensor, hatch or vent: hide those during a simulated suit fire.
+  if (state.simulated && state.scenario === "suit") { $("box-status").hidden = true; alert = ""; }
   $("box-alert").textContent = alert;
   $("box-alert").hidden = !alert;
 
   const risk = state.risk;
+  drawScene(state);
   $("lamp").className = `lamp ${risk.level}`;
   $("lamp-word").textContent = LAMP_WORDS[risk.level];
   $("risk-score").textContent = risk.score;
@@ -129,6 +231,13 @@ async function refreshState() {
   $("p-smoke").textContent = risk.parts.smoke;
   $("p-heat").textContent = risk.parts.heat;
   $("p-flame").textContent = risk.parts.flame;
+  // Score gauge: each part's share of the 0–100 score (the total caps at 100).
+  let room = 100;
+  for (const [part, id] of [["atmosphere", "g-atm"], ["smoke", "g-smoke"], ["heat", "g-heat"], ["flame", "g-flame"]]) {
+    const w = Math.max(0, Math.min(room, risk.parts[part] || 0));
+    room -= w;
+    $(id).style.width = `${w}%`;
+  }
   $("risk-explain").textContent = risk.explain;
   if (!$("formula-list").children.length) {
     const f = risk.formula;
@@ -153,6 +262,7 @@ async function refreshState() {
 }
 
 $("scenario").addEventListener("change", (e) => {
+  if (sim) { sim.areaBefore = $("area").value; stopSim(); }
   if (e.target.value === "live") {
     followLive = true;
   } else {
@@ -171,6 +281,38 @@ $("show-all").addEventListener("click", () => {
   lastKey = "";
   refreshState();
 });
+
+// ---------- habitat module drawing ----------
+// Presets have no sensor box, so the drawing shows the normal state: crew in, hatch open, vent open.
+function drawScene(s) {
+  window.__fwState = s;
+  if (window.FW3D) window.FW3D.update(s);
+  const svg = $("scene");
+  if (!svg) return;
+  const box = s.box || {};
+  const crewIn = box.crew ?? true;
+  const hatchClosed = !!box.hatch_closed;
+  const ventClosed = box.vent === "closed";
+  const flame = !!s.flame;
+  const set = (cls, on) => svg.classList.toggle(cls, on);
+  set("vent-closed", ventClosed);
+  set("crew-out", !crewIn);
+  set("hatch-closed", hatchClosed);
+  set("flame-on", flame);
+  set("heat-on", flame || !!box.heat_detected);
+  set("suppress-on", box.mode === "suppressing");
+  for (const l of ["green", "yellow", "red"]) set(`lvl-${l}`, s.risk.level === l);
+  // Smoke fills the room; richer oxygen makes the cabin air read a little brighter.
+  svg.style.setProperty("--smoke", Math.min(0.95, (s.smoke || 0) / 90).toFixed(2));
+  svg.style.setProperty("--o2-boost", `${Math.max(0, Math.min(10, (s.o2_pct - 21) * 0.5)).toFixed(1)}%`);
+  $("scene-air").textContent = `${fmt(s.o2_pct)}% O₂ · ${fmt(s.pressure_psi)} psi`;
+  const tag = (id, text, on) => {
+    for (const el of [$(id), $(id.replace("scene-", "tag-"))]) { el.textContent = text; el.classList.toggle("on", on); }
+  };
+  tag("scene-crew", crewIn ? "Crew inside" : "Crew evacuated", !crewIn);
+  tag("scene-hatch", hatchClosed ? "Hatch closed" : "Hatch open", hatchClosed);
+  tag("scene-vent", ventClosed ? "Vent closed" : "Vent open", ventClosed);
+}
 
 // ---------- the finding (headline) ----------
 function writeFinding(results) {
@@ -584,66 +726,153 @@ function addMsg(text, who) {
 }
 
 // ---------- gaps chart ----------
-// Shaded band for the oxygen range planned for Moon bases (30–34%).
-const moonBand = {
-  id: "moonBand",
+// Test runs at the same conditions are merged into one bubble (bigger = more runs), the
+// box around your habitat is the "near" rule, and the presets are labelled for reference.
+const Y_MAX_PSI = 25;
+const NEAR = { o2: 4, frac: 0.3 };
+let allPts = [];
+
+const REF_HABITATS = [
+  { name: "ISS", o2: 21, psi: 14.7 },
+  { name: "Moon base", o2: 34, psi: 8.2 },
+  { name: "Moon base (brief)", o2: 30, psi: 10.2 },
+];
+
+// Text with a white outline so labels stay readable on top of bubbles.
+function haloText(ctx, text, x, y) {
+  ctx.save();
+  ctx.lineWidth = 4; ctx.strokeStyle = "rgba(255,255,255,.92)"; ctx.lineJoin = "round";
+  ctx.strokeText(text, x, y);
+  ctx.restore();
+  ctx.fillText(text, x, y);
+}
+
+const chartExtras = {
+  id: "chartExtras",
   beforeDatasetsDraw(c) {
-    const { ctx, chartArea: a, scales: { x } } = c;
-    const x0 = x.getPixelForValue(30), x1 = x.getPixelForValue(34);
+    if (!state) return;
+    const { ctx, chartArea: a, scales: { x, y } } = c;
+    const p = state.pressure_psi;
+    const x0 = Math.max(a.left, x.getPixelForValue(state.o2_pct - NEAR.o2));
+    const x1 = Math.min(a.right, x.getPixelForValue(state.o2_pct + NEAR.o2));
+    const y0 = Math.max(a.top, y.getPixelForValue(p * (1 + NEAR.frac)));
+    const y1 = Math.min(a.bottom, y.getPixelForValue(p * (1 - NEAR.frac)));
+    if (x1 <= x0) return;
     ctx.save();
-    ctx.fillStyle = "rgba(240, 168, 28, 0.18)";
-    ctx.fillRect(x0, a.top, x1 - x0, a.bottom - a.top);
-    ctx.fillStyle = "#7a5205";
-    ctx.font = "500 12px Barlow, sans-serif";
-    ctx.fillText("Moon base oxygen", x1 + 6, a.top + 14);
+    ctx.fillStyle = "rgba(214, 40, 57, 0.07)";
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = "rgba(214, 40, 57, 0.75)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.restore();
+  },
+  afterDatasetsDraw(c) {
+    const { ctx, chartArea: a, scales: { x, y } } = c;
+    ctx.save();
+    ctx.font = "500 12.5px Barlow, sans-serif";
+    for (const h of REF_HABITATS) {
+      if (state && Math.abs(h.o2 - state.o2_pct) < 0.5 && Math.abs(h.psi - state.pressure_psi) < 0.2) continue;
+      const px = x.getPixelForValue(h.o2), py = y.getPixelForValue(h.psi);
+      if (px < a.left || px > a.right) continue;
+      ctx.fillStyle = "#13213d";
+      ctx.beginPath(); ctx.moveTo(px, py - 5); ctx.lineTo(px + 5, py); ctx.lineTo(px, py + 5); ctx.lineTo(px - 5, py); ctx.closePath(); ctx.fill();
+      haloText(ctx, h.name, px + 8, py - 7);
+    }
+    if (state && state.o2_pct <= x.max) {
+      const px = x.getPixelForValue(state.o2_pct), py = y.getPixelForValue(Math.min(state.pressure_psi, Y_MAX_PSI));
+      ctx.fillStyle = "#d62839";
+      ctx.font = "600 13px Barlow, sans-serif";
+      haloText(ctx, "Your habitat", px + 13, py + 4);
+    }
     ctx.restore();
   },
 };
 
+function nearCount(o2, psi) {
+  let runs = 0; const exps = new Set();
+  for (const p of allPts) {
+    if ((p.note || "").includes("summary row")) continue;
+    if (Math.abs(p.o2 - o2) <= NEAR.o2 && Math.abs(p.psi - psi) <= NEAR.frac * psi) { runs++; exps.add(p.acronym || p.id); }
+  }
+  return { runs, exps };
+}
+
+function writeTakeaway() {
+  if (!state || !allPts.length) return;
+  const { runs, exps } = nearCount(state.o2_pct, state.pressure_psi);
+  const earth = allPts.filter((p) => Math.abs(p.o2 - 21) <= 0.6 && Math.abs(p.psi - 14.7) <= 1).length;
+  const total = allPts.length.toLocaleString();
+  const names = [...exps].slice(0, 3).join(", ") + (exps.size > 3 ? ` and ${exps.size - 3} more` : "");
+  const earthLike = Math.abs(state.o2_pct - 21) <= 2 && state.pressure_psi >= 12;
+  const compare = earthLike ? " This is the air NASA has tested most." : ` For comparison, ${earth.toLocaleString()} were run in Earth-like air.`;
+  $("gap-takeaway").innerHTML = runs
+    ? `<strong>${runs.toLocaleString()} of ${total}</strong> NASA test runs fall in the box around your habitat (${esc(names)}).${compare}`
+    : `<strong>None of ${total}</strong> NASA test runs fall in the box around your habitat, so this air hasn't been tested.${compare}`;
+}
+
 async function buildChart() {
   const pts = await api("/api/points");
-  const byArea = { prevention: [], detection: [], suppression: [] };
-  for (const p of pts) {
-    if ((p.note || "").includes("burner")) continue; // burner gas, not cabin air
-    (byArea[p.area] || byArea.prevention).push({ x: p.o2, y: p.p, id: p.id, name: p.acronym });
+  allPts = pts.filter((p) => !(p.note || "").includes("burner"))   // burner gas, not cabin air
+    .map((p) => ({ ...p, psi: p.p * PSI_PER_ATM }));
+  // Merge runs at (nearly) the same conditions, per safety area.
+  const cells = new Map();
+  let offTop = 0;
+  for (const p of allPts) {
+    if (p.psi > Y_MAX_PSI) { offTop++; continue; }
+    const area = AREA_WORDS[p.area] ? p.area : "prevention";
+    const k = `${area}|${Math.round(p.o2)}|${(Math.round(p.psi * 2) / 2).toFixed(1)}`;
+    const cell = cells.get(k) || { area, x: Math.round(p.o2), y: Math.round(p.psi * 2) / 2, n: 0, names: new Set() };
+    cell.n++; cell.names.add(p.acronym || p.id);
+    cells.set(k, cell);
   }
+  $("gap-offtop").textContent = offTop ? `${offTop} high-pressure runs (above ${Y_MAX_PSI} psi) are off the top of the chart.` : "";
+  const byArea = { prevention: [], detection: [], suppression: [] };
+  for (const c of cells.values()) byArea[c.area].push({ ...c, r: Math.min(15, 3 + 1.7 * Math.sqrt(c.n)) });
+
   Chart.defaults.font.family = "Barlow, sans-serif";
-  Chart.defaults.color = "#56627a";
+  Chart.defaults.color = "#5a6780";
   chart = new Chart($("gap-chart"), {
-    type: "scatter",
+    type: "bubble",
     data: {
       datasets: [
-        ...Object.entries(byArea).filter(([, data]) => data.length).map(([area, data]) => ({
-          label: AREA_WORDS[area], data, pointRadius: 3, pointHoverRadius: 5,
-          order: area === "detection" ? 0 : 1,   // smoke tests sit at 21% / 1 atm; draw them on top
-          backgroundColor: AREA_COLORS[area] + "b3", borderWidth: 0,
+        ...Object.entries(byArea).filter(([, d]) => d.length).map(([area, data]) => ({
+          label: AREA_WORDS[area], data, order: area === "detection" ? 0 : 1,
+          backgroundColor: AREA_COLORS[area] + "8c", borderColor: AREA_COLORS[area], borderWidth: 1,
+          hoverBorderWidth: 2,
         })),
-        { label: "Your habitat", data: [], pointRadius: 9, pointHoverRadius: 10,
-          backgroundColor: "transparent", borderColor: "#cf2f3f", borderWidth: 3 },
+        { type: "scatter", label: "Your habitat", data: [], pointRadius: 9, pointHoverRadius: 10, order: -1,
+          backgroundColor: "transparent", borderColor: "#d62839", borderWidth: 3 },
       ],
     },
     options: {
       maintainAspectRatio: false,
       animation: false,
       scales: {
-        x: { title: { display: true, text: "Oxygen in the air (%)" }, min: 0, max: 50, grid: { color: "#d8dee5" } },
-        y: { title: { display: true, text: "Pressure (atmospheres)" }, min: 0, grace: "5%", grid: { color: "#d8dee5" } },
+        x: { title: { display: true, text: "Oxygen in the air (%)" }, min: 10, max: 45, grid: { color: "#eef1f5" }, border: { color: "#c3ccd8" } },
+        y: { title: { display: true, text: "Cabin pressure (psi)" }, min: 0, max: Y_MAX_PSI, grid: { color: "#eef1f5" }, border: { color: "#c3ccd8" } },
       },
       plugins: {
-        legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", boxWidth: 8, color: "#15233f" } },
-        tooltip: { callbacks: { label: (c) => c.raw.id ? `${c.raw.id} ${c.raw.name || ""}: ${c.raw.x}% O₂, ${c.raw.y} atm` : `Your habitat: ${c.raw.x}% O₂` } },
+        legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", boxWidth: 8, padding: 18, color: "#13213d" } },
+        tooltip: { callbacks: {
+          title: () => "",
+          label: (c) => c.raw.n
+            ? `${c.raw.n} run${c.raw.n > 1 ? "s" : ""} at ${c.raw.x}% O₂, ${c.raw.y} psi: ${[...c.raw.names].join(", ")}`
+            : `Your habitat: ${fmt(c.raw.x)}% O₂, ${fmt(c.raw.y)} psi`,
+        } },
       },
     },
-    plugins: [moonBand],
+    plugins: [chartExtras],
   });
 }
 
 function markHabitat() {
   if (!chart || !state) return;
-  chart.data.datasets.at(-1).data = [{ x: state.o2_pct, y: +(state.pressure_psi / PSI_PER_ATM).toFixed(2) }];
-  // Data sits below ~45% O2; only widen the axis for a spacesuit-style atmosphere.
-  chart.options.scales.x.max = state.o2_pct > 45 ? 100 : 50;
+  chart.data.datasets.at(-1).data = [{ x: state.o2_pct, y: Math.min(state.pressure_psi, Y_MAX_PSI) }];
+  // Only widen the oxygen axis for a pure-oxygen spacesuit.
+  chart.options.scales.x.max = state.o2_pct > 45 ? 100 : 45;
   chart.update("none");
+  writeTakeaway();
 }
 
 // ---------- start ----------

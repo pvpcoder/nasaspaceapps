@@ -3,87 +3,161 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FlameWatch</title>
-  <link rel="stylesheet" href="style.css">
+  <title>FlameWatch · Fire risk for crewed habitats</title>
+  <meta name="description" content="Checks a habitat's air against NASA's space station fire experiments and shows where the data runs out.">
+  <meta name="theme-color" content="#0e1a33">
+  <link rel="preload" href="fonts/barlow-condensed-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css?v=9">
   <script src="chart.umd.min.js"></script>
 </head>
 <body>
-  <div id="conn-banner" class="banner" hidden>Waking up the FlameWatch server. The free server can take up to a minute.</div>
+  <a class="skip" href="#experiments">Skip to the experiments</a>
+  <div id="conn-banner" class="banner" role="status" hidden>Waking up the FlameWatch server. The free server can take up to a minute.</div>
 
-  <header class="top">
-    <div class="brand">
-      <span class="mark" aria-hidden="true"></span>
-      <span class="name">FlameWatch</span>
+  <header class="hero">
+    <div class="wrap bar">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13" class="mark-halo"/><circle cx="16" cy="16" r="7.5" class="mark-core"/></svg>
+        <span class="name">FlameWatch</span>
+      </div>
+      <p id="source" class="source">Preset habitat</p>
     </div>
-    <p class="tagline">Fire risk for crewed habitats, checked against NASA’s space station fire experiments</p>
-    <p id="source" class="source">Preset habitat</p>
+
+    <div class="wrap hero-grid">
+      <div class="hero-text">
+        <p class="lede">Fire risk for crewed habitats, checked against 24 NASA space station fire experiments.</p>
+        <h1 id="finding" aria-live="polite">Loading NASA data…</h1>
+        <label class="field">
+          <span>Habitat</span>
+          <select id="scenario"></select>
+        </label>
+        <div class="sim">
+          <button id="sim-btn" class="sim-btn" type="button">Simulate a fire</button>
+          <span id="sim-hint" class="sim-hint">30 seconds, only in your browser. No sensor box needed.</span>
+          <p id="sim-caption" class="sim-caption" aria-live="polite" hidden></p>
+        </div>
+        <div class="scene3d-wrap">
+          <div id="scene3d" class="scene3d" role="img" aria-label="3D view of the habitat, updated with the readings"></div>
+          <div class="scene-tags" aria-hidden="true"><span id="tag-crew">Crew inside</span><span id="tag-hatch">Hatch open</span><span id="tag-vent">Vent open</span><span class="drag-hint">Move your mouse to look around</span></div>
+        </div>
+        <figure class="scene" aria-label="Drawing of the habitat module, updated with the readings">
+          <svg id="scene" viewBox="0 0 640 232" role="img" aria-labelledby="scene-t">
+            <title id="scene-t">Habitat module cutaway</title>
+            <defs>
+              <filter id="soft" x="-30%" y="-60%" width="160%" height="220%"><feGaussianBlur stdDeviation="6"/></filter>
+              <clipPath id="hull-in"><rect x="74" y="64" width="492" height="104" rx="46"/></clipPath>
+              <radialGradient id="glow" cx="50%" cy="80%" r="60%"><stop offset="0" stop-color="#ff8a3d" stop-opacity=".75"/><stop offset="1" stop-color="#ff8a3d" stop-opacity="0"/></radialGradient>
+              <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b3856"/><stop offset="1" stop-color="#18223a"/></linearGradient>
+            </defs>
+            <g class="sky">
+              <circle cx="604" cy="30" r="15" class="earth"/><path d="M596 24c4-3 9-2 10 2s-3 5-1 9c-4 1-9-2-9-6s-2-3 0-5z" class="earth-land"/>
+              <circle cx="40" cy="22" r="1.2"/><circle cx="120" cy="40" r="1"/><circle cx="230" cy="16" r="1.4"/><circle cx="380" cy="26" r="1"/><circle cx="520" cy="14" r="1.2"/><circle cx="560" cy="58" r="1"/><circle cx="20" cy="70" r="1"/>
+            </g>
+            <path d="M0 196 Q320 178 640 194 V232 H0Z" fill="url(#ground)"/>
+            <ellipse cx="560" cy="212" rx="34" ry="5" class="crater"/><ellipse cx="30" cy="206" rx="20" ry="3.5" class="crater"/><ellipse cx="300" cy="222" rx="26" ry="4" class="crater"/>
+            <path d="M140 170v24M500 170v24M126 194h28M486 194h28" class="leg"/>
+
+            <g clip-path="url(#hull-in)">
+              <rect x="74" y="64" width="492" height="104" class="air"/>
+              <rect x="300" y="70" width="120" height="98" fill="url(#glow)" class="heat"/>
+              <path d="M74 160h492" class="floor"/>
+              <g class="rack"><rect x="206" y="84" width="58" height="72" rx="3"/><path d="M206 108h58M206 132h58"/></g>
+              <g class="rack fire-rack"><rect x="330" y="84" width="60" height="72" rx="3"/><path d="M340 92v56M350 92v56M360 92v56M370 92v56M380 92v56" class="cables"/></g>
+              <g class="rack"><rect x="452" y="84" width="66" height="72" rx="3"/><path d="M452 108h66M452 132h66"/></g>
+              <path d="M470 72c-10 18-34 26-52 46" class="airflow"/><path d="M490 72c-4 22-24 40-40 56" class="airflow"/>
+              <g class="flame"><path d="M360 156c-16-10-14-30 0-50c14 20 16 40 0 50z" class="f-out"/><path d="M360 156c-8-6-7-18 0-30c7 12 8 24 0 30z" class="f-in"/></g>
+              <g class="smoke" filter="url(#soft)">
+                <circle cx="300" cy="96" r="18"/><circle cx="340" cy="84" r="22"/><circle cx="388" cy="90" r="20"/><circle cx="430" cy="82" r="18"/>
+                <circle cx="260" cy="88" r="16"/><circle cx="470" cy="94" r="16"/><circle cx="220" cy="100" r="14"/><circle cx="510" cy="104" r="14"/><circle cx="360" cy="110" r="16"/>
+              </g>
+              <g class="co2"><path d="M262 72l-18 40M262 72l0 44M262 72l18 40M262 72l36 30M262 72l-36 30"/><rect x="74" y="64" width="492" height="104" class="co2-haze"/></g>
+              <g class="crew"><circle cx="150" cy="102" r="9"/><rect x="137" y="113" width="26" height="34" rx="9"/><path d="M143 147v12M157 147v12"/></g>
+              <rect x="80" y="88" width="14" height="68" rx="2" class="hatch"/>
+              <text x="108" y="82" id="scene-air" class="air-label">34% O₂ · 8.2 psi</text>
+            </g>
+            <rect x="72" y="62" width="496" height="108" rx="48" class="hull"/>
+            <rect x="256" y="58" width="12" height="8" rx="2" class="nozzle"/>
+            <g class="vent"><rect x="440" y="54" width="60" height="8" rx="2" class="vent-frame"/><rect x="442" y="56" width="56" height="4" class="vent-flap"/></g>
+            <circle cx="320" cy="52" r="7" class="beacon"/><path d="M314 59h12" class="leg"/>
+            <text x="150" y="216" text-anchor="middle" id="scene-crew" class="tag">Crew inside</text>
+            <text x="64" y="186" text-anchor="middle" id="scene-hatch" class="tag">Hatch open</text>
+            <text x="520" y="40" text-anchor="start" id="scene-vent" class="tag">Vent open</text>
+          </svg>
+        </figure>
+      </div>
+
+      <section class="instrument" aria-label="Habitat conditions">
+        <div id="lamp" class="lamp green" role="status">
+          <span id="lamp-word" class="lamp-word">Nominal</span>
+          <span class="lamp-score"><span id="risk-score">0</span><small>/100 fire risk</small></span>
+        </div>
+
+        <div class="gauge" aria-hidden="true">
+          <div class="gauge-track">
+            <span id="g-atm" class="seg s-atm"></span><span id="g-smoke" class="seg s-smoke"></span><span id="g-heat" class="seg s-heat"></span><span id="g-flame" class="seg s-flame"></span>
+          </div>
+          <div class="gauge-scale"><span style="left:30%">Caution 30</span><span style="left:60%">Warning 60</span></div>
+        </div>
+        <dl class="breakdown" aria-label="What adds to the risk">
+          <div><dt><i class="dot s-atm"></i>Oxygen-rich air</dt><dd id="p-atm">0</dd></div>
+          <div><dt><i class="dot s-smoke"></i>Smoke</dt><dd id="p-smoke">0</dd></div>
+          <div><dt><i class="dot s-heat"></i>Heat</dt><dd id="p-heat">0</dd></div>
+          <div><dt><i class="dot s-flame"></i>Flame</dt><dd id="p-flame">0</dd></div>
+        </dl>
+
+        <dl class="readings">
+          <div><dt>Oxygen</dt><dd><span id="r-o2">–</span><small>%</small></dd></div>
+          <div><dt>Pressure</dt><dd><span id="r-p">–</span><small>psi</small></dd></div>
+          <div><dt>Smoke</dt><dd><span id="r-smoke">–</span><small>/100</small></dd></div>
+          <div><dt>Temperature</dt><dd><span id="r-temp">–</span><small>°C</small></dd></div>
+        </dl>
+
+        <dl id="box-status" class="readings box" aria-label="Sensor box module status" hidden>
+          <div><dt>Crew in module</dt><dd id="r-crew">–</dd></div>
+          <div><dt>Hatch</dt><dd id="r-hatch">–</dd></div>
+          <div><dt>Ventilation</dt><dd id="r-vent">–</dd></div>
+        </dl>
+        <p id="box-alert" class="callout alert" hidden></p>
+
+        <p id="risk-explain" class="explain"></p>
+        <details class="disclose">
+          <summary>How the score is calculated</summary>
+          <dl id="formula-list"></dl>
+          <p id="formula-why" class="note"></p>
+          <p class="note">This is a simple, transparent score for the demo, not a validated fire model.</p>
+        </details>
+        <details class="disclose">
+          <summary>About the sensor box</summary>
+          <p class="note">The sensor box measures temperature, crew presence (motion sensor) and whether the hatch is closed (ultrasonic). Oxygen and smoke are set with dials to simulate the habitat’s air and a smoke detector. A buzzer sounds at Warning level, and the switch silences it. Its switch triggers suppression, and a servo closes the vent when the temperature rises above the room’s normal (more sensitive at higher oxygen). The heat threshold is scaled down so a warm hand can trigger it in the demo.</p>
+        </details>
+      </section>
+    </div>
   </header>
 
-  <section class="finding" aria-live="polite">
-    <h1 id="finding">Loading NASA data…</h1>
-  </section>
-
-  <main class="grid">
-    <section class="habitat" aria-label="Habitat conditions">
-      <label class="field">
-        <span>Habitat</span>
-        <select id="scenario"></select>
-      </label>
-
-      <dl class="readings">
-        <div><dt>Oxygen</dt><dd><span id="r-o2">–</span><small>%</small></dd></div>
-        <div><dt>Pressure</dt><dd><span id="r-p">–</span><small>psi</small></dd></div>
-        <div><dt>Smoke</dt><dd><span id="r-smoke">–</span><small>/100</small></dd></div>
-        <div><dt>Temperature</dt><dd><span id="r-temp">–</span><small>°C</small></dd></div>
-      </dl>
-
-      <dl id="box-status" class="readings box" aria-label="Sensor box module status" hidden>
-        <div><dt>Crew in module</dt><dd id="r-crew">–</dd></div>
-        <div><dt>Hatch</dt><dd id="r-hatch">–</dd></div>
-        <div><dt>Ventilation</dt><dd id="r-vent">–</dd></div>
-      </dl>
-      <p id="box-alert" class="callout" hidden></p>
-
-      <div id="lamp" class="lamp green" role="status">
-        <span id="lamp-word" class="lamp-word">Nominal</span>
-        <span class="lamp-score"><span id="risk-score">0</span> fire risk</span>
-      </div>
-
-      <table class="breakdown" aria-label="What adds to the risk">
-        <tr><th>Oxygen-rich air</th><td id="p-atm">0</td></tr>
-        <tr><th>Smoke</th><td id="p-smoke">0</td></tr>
-        <tr><th>Heat</th><td id="p-heat">0</td></tr>
-        <tr><th>Flame</th><td id="p-flame">0</td></tr>
-      </table>
-
-      <p id="risk-explain" class="explain"></p>
-      <details class="formula">
-        <summary>How is this calculated?</summary>
-        <dl id="formula-list"></dl>
-        <p id="formula-why" class="note"></p>
-        <p class="note">This is a simple, transparent score for the demo, not a validated fire model.</p>
-      </details>
-
-      <p class="note">The sensor box measures temperature, crew presence (motion sensor) and whether the hatch is closed (ultrasonic). Oxygen and smoke are set with dials to simulate the habitat’s air and a smoke detector. A buzzer sounds at Warning level, and the switch silences it. Its switch triggers suppression, and a servo closes the vent when the temperature rises above the room’s normal (more sensitive at higher oxygen). The heat threshold is scaled down so a warm hand can trigger it in the demo.</p>
-    </section>
-
-    <section class="experiments" aria-label="NASA experiments">
+  <main class="wrap stack">
+    <section id="experiments" class="panel experiments" aria-labelledby="exp-h">
       <div class="section-head">
-        <h2>NASA experiments that apply here</h2>
-        <select id="area" aria-label="Filter by safety area">
-          <option value="all">Every safety area</option>
-          <option value="prevention">Preventing fires</option>
-          <option value="detection">Detecting smoke</option>
-          <option value="suppression">Putting fires out</option>
-        </select>
+        <div>
+          <h2 id="exp-h">NASA experiments that apply here</h2>
+          <p id="near-rule" class="sub"></p>
+        </div>
+        <label class="filter"><span class="sr">Safety area</span>
+          <select id="area">
+            <option value="all">Every safety area</option>
+            <option value="prevention">Preventing fires</option>
+            <option value="detection">Detecting smoke</option>
+            <option value="suppression">Putting fires out</option>
+          </select>
+        </label>
       </div>
-      <p id="near-rule" class="rule-note"></p>
-      <table class="exp-table">
-        <thead>
-          <tr><th class="pick"><span class="sr">Compare</span></th><th>Experiment</th><th>Covers</th><th class="num"><span id="near-head" title="">Runs near you<sup aria-hidden="true">?</sup></span></th><th class="num">Oxygen tested</th></tr>
-        </thead>
-        <tbody id="rank-body"></tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="exp-table">
+          <thead>
+            <tr><th class="pick"><span class="sr">Compare</span></th><th>Experiment</th><th>Covers</th><th class="num"><span id="near-head" title="">Runs near you<sup aria-hidden="true">?</sup></span></th><th class="num">Oxygen tested</th></tr>
+          </thead>
+          <tbody id="rank-body"></tbody>
+        </table>
+      </div>
       <div class="table-foot">
         <button id="show-all" class="link-btn" type="button">Show all experiments</button>
         <div class="actions">
@@ -93,18 +167,46 @@
       </div>
     </section>
 
-    <section id="compare" class="compare" aria-label="Compare experiments" hidden>
+    <section id="compare" class="panel compare" aria-labelledby="cmp-h" hidden>
       <div class="section-head">
-        <h2>Side by side</h2>
+        <h2 id="cmp-h">Side by side</h2>
         <button id="compare-close" class="link-btn" type="button">Close</button>
       </div>
       <ul id="compare-summary" class="compare-summary"></ul>
       <div class="compare-scroll"><table id="compare-table" class="compare-table"></table></div>
     </section>
 
-    <section id="map" class="map" aria-label="How the experiments connect">
+    <div class="split">
+      <section class="panel gaps" aria-labelledby="gaps-h">
+        <h2 id="gaps-h">Where NASA has tested, and where it hasn’t</h2>
+        <p class="sub">Each bubble is a group of test runs at the same oxygen and pressure; bigger means more runs. The dashed box is what counts as close to your habitat (±4 points of oxygen, ±30% pressure).</p>
+        <p id="gap-takeaway" class="gap-takeaway"></p>
+        <div class="chart-wrap"><canvas id="gap-chart" role="img" aria-label="Bubble chart of NASA test runs by oxygen and pressure, with your habitat and the conditions counted as close to it marked"></canvas></div>
+        <p id="gap-offtop" class="note"></p>
+        <p id="saffire-note" class="callout" hidden>NASA’s Saffire-VI burned fabric and acrylic at 29–31% oxygen and about 7.9 psi in its final 2023–24 flight. Those results aren’t in the PSI data yet. <a href="https://ntrs.nasa.gov/citations/20240002981" target="_blank" rel="noopener">NASA report</a></p>
+        <p class="note">No lunar-gravity data in PSI yet. NASA’s LUCI burned fabric and acrylic in simulated lunar gravity (spinning New Shepard rocket, normal air) in 2025; FM2 on the Moon is planned for late 2026.</p>
+      </section>
+
+      <section class="panel ask" aria-labelledby="ask-h">
+        <h2 id="ask-h">Ask about this habitat</h2>
+        <p class="sub">Answers are built from NASA’s experiment data and name the experiment behind each point. Anything from general fire science is labelled.</p>
+        <div id="chat-log" class="chat-log" aria-live="polite">
+          <div class="suggest">
+            <button type="button" class="q">Which materials are riskiest at this oxygen level?</button>
+            <button type="button" class="q">How would a fire spread here compared to Earth?</button>
+            <button type="button" class="q">What should NASA test next for this habitat?</button>
+          </div>
+        </div>
+        <form id="chat-form">
+          <input id="chat-input" name="question" placeholder="Ask a question about this habitat…" autocomplete="off" aria-label="Your question" maxlength="500">
+          <button type="submit">Ask</button>
+        </form>
+      </section>
+    </div>
+
+    <section id="map" class="panel map" aria-labelledby="map-h">
       <div class="map-head">
-        <h2>How the experiments connect</h2>
+        <h2 id="map-h">How the experiments connect</h2>
         <p class="sub">Each row is one set of hardware, so experiments in the same row compare most directly. Hover an experiment to see its links; click to keep it selected.</p>
       </div>
       <div class="map-body">
@@ -123,41 +225,75 @@
       </ul>
     </section>
 
-    <section class="gaps" aria-label="Where NASA has data">
-      <h2>Where NASA has tested, and where it hasn’t</h2>
-      <p class="sub">Every dot is one test run in orbit. The ring is your habitat; the shaded band is the oxygen range planned for Moon bases.</p>
-      <div class="chart-wrap"><canvas id="gap-chart"></canvas></div>
-      <p id="saffire-note" class="callout" hidden>NASA’s Saffire-VI burned fabric and acrylic at 29–31% oxygen and about 7.9 psi in its final 2023–24 flight. Those results aren’t in the PSI data yet. <a href="https://ntrs.nasa.gov/citations/20240002981" target="_blank" rel="noopener">NASA report</a></p>
-      <p class="note">No lunar-gravity data in PSI yet. NASA’s LUCI burned fabric and acrylic in simulated lunar gravity (spinning New Shepard rocket, normal air) in 2025; FM2 on the Moon is planned for late 2026.</p>
-    </section>
-
-    <section class="ask" aria-label="Ask about this habitat">
-      <h2>Ask about this habitat</h2>
-      <div id="chat-log" class="chat-log">
-        <p class="hint">Answers are built from NASA’s experiment data and name the experiment behind each point. Anything from general fire science is labelled.</p>
-        <div class="suggest">
-          <button type="button" class="q">Which materials are riskiest at this oxygen level?</button>
-          <button type="button" class="q">How would a fire spread here compared to Earth?</button>
-          <button type="button" class="q">What should NASA test next for this habitat?</button>
+    <section class="panel gravity" aria-labelledby="grav-h">
+      <h2 id="grav-h">Outside PSI: what NASA has learned about lunar gravity</h2>
+      <p class="sub">None of this is in the PSI database yet. In lunar gravity, flames spread more slowly but can survive at lower oxygen, so Earth’s standard flammability test may not be conservative for a Moon base.</p>
+      <div class="gravity-cols">
+        <div class="gcol">
+          <h3>Materials keep burning at lower oxygen</h3>
+          <p class="g-sub">Lowest oxygen at which the flame survived. Drop-tower tests, with lunar and Martian gravity made by a centrifuge.</p>
+          <div class="table-scroll">
+            <table class="gravity-table">
+              <thead><tr><th>Material</th><th class="num">Earth</th><th class="num">Mars</th><th class="num">Moon</th><th class="num">Orbit</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Mylar G film <small>10.2 psi</small></th><td class="num">21.2%</td><td class="num">18.0%</td><td class="num low">15.6%</td><td class="num">17.0%</td></tr>
+                <tr><th scope="row">Ultem 1000 plastic <small>10.2 psi</small></th><td class="num">23.5%</td><td class="num">22.0%</td><td class="num low">21.0%</td><td class="num">24.0%</td></tr>
+                <tr><th scope="row">Nomex fabric <small>14.7 psi</small></th><td class="num">23.5%</td><td class="num low">19.9%</td><td class="num">21.0%</td><td class="num">23.0%</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="g-note">Lowest value per material highlighted. Low-gravity tests lasted about 5 seconds and used a flame-survival rule that differs from Earth’s test. <a href="https://ntrs.nasa.gov/citations/20130010991" target="_blank" rel="noopener">Olson &amp; Ferkul, NASA, 2012</a></p>
+        </div>
+        <div class="gcol">
+          <h3>But flames spread more slowly</h3>
+          <p class="g-sub">LUCI, 2025: the same samples burned in normal air in spun-up lunar gravity and on Earth. Spread rate in mm/s.</p>
+          <div class="table-scroll">
+            <table class="gravity-table">
+              <thead><tr><th>Sample</th><th class="num">Moon</th><th class="num">Earth</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">SIBAL fabric <small>flame base</small></th><td class="num">0.9</td><td class="num">1.5</td></tr>
+                <tr><th scope="row">SIBAL fabric <small>flame tip</small></th><td class="num">1.1</td><td class="num">2.8</td></tr>
+                <tr><th scope="row">Acrylic rod <small>flame tip</small></th><td class="num">1.5</td><td class="num">4.0</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="g-note">Fitted rates from a single suborbital flight. <a href="https://ntrs.nasa.gov/api/citations/20250010653/downloads/ASGSR%202025-LUCI-Ferkul-Presentation-v2-20250010653.pdf" target="_blank" rel="noopener">Ferkul et al., NASA, 2025</a></p>
+        </div>
+        <div class="gcol">
+          <h3>Suggested lunar safety margin</h3>
+          <p class="g-sub">How many oxygen points to adjust a material’s Earth flammability limit for lunar gravity.</p>
+          <div class="table-scroll">
+            <table class="gravity-table">
+              <thead><tr><th>Material</th><th class="num">O₂ points</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Polycarbonate</th><td class="num">2.3</td></tr>
+                <tr><th scope="row">Acrylic (PMMA)</th><td class="num">1.9</td></tr>
+                <tr><th scope="row">Cotton T-shirt <small>smoldering</small></th><td class="num">1.8</td></tr>
+                <tr><th scope="row">P 213</th><td class="num">1.4</td></tr>
+                <tr><th scope="row">Cotton T-shirt <small>flaming</small></th><td class="num">0.82</td></tr>
+                <tr><th scope="row">Nomex Velcro</th><td class="num">0.32</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="g-note">A conservative, model-based estimate (95% confidence), not a measurement. <a href="https://ntrs.nasa.gov/citations/20250002114" target="_blank" rel="noopener">Urban et al., NASA, 2025, Table 2</a></p>
         </div>
       </div>
-      <form id="chat-form">
-        <input id="chat-input" placeholder="Type a question" autocomplete="off" aria-label="Your question" maxlength="500">
-        <button type="submit">Ask</button>
-      </form>
     </section>
+
+    <details class="panel earth">
+      <summary>The same physics on Earth</summary>
+      <p>The same physics applies wherever air is oxygen-enriched on Earth, such as hospital oxygen therapy and hyperbaric chambers. NASA fire research has also fed into everyday safety equipment, including smoke detectors, firefighter gear and water-mist extinguishers.</p>
+    </details>
   </main>
 
-  <details class="earth">
-    <summary>On Earth</summary>
-    <p>The same physics applies wherever air is oxygen-enriched on Earth, such as hospital oxygen therapy and hyperbaric chambers. NASA fire research has also fed into everyday safety equipment, including smoke detectors, firefighter gear and water-mist extinguishers.</p>
-  </details>
-
-  <footer>
-    Data from NASA’s <a href="https://psi.nasa.gov/physci/repo/search?q=combustion" target="_blank" rel="noopener">Physical Sciences Informatics</a> repository, 24 combustion investigations. Built for NASA Space Apps 2026, Flame in Freefall.
+  <footer class="foot">
+    <div class="wrap">
+      <p>Data from NASA’s <a href="https://psi.nasa.gov/physci/repo/search?q=combustion" target="_blank" rel="noopener">Physical Sciences Informatics</a> repository, 24 combustion investigations. Built for NASA Space Apps 2026, Flame in Freefall.</p>
+    </div>
   </footer>
 
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script src="config.js?v=2"></script>
+  <script src="app.js?v=7"></script>
+  <script type="module" src="scene3d.js?v=2"></script>
 </body>
 </html>

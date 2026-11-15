@@ -10,6 +10,7 @@ Endpoints
   GET  /api/rank           experiments ranked for that habitat
   GET  /api/compare        side-by-side profiles (ids=PSI-1,PSI-2,...)
   GET  /api/export         CSV of test runs (scope=near or scope=ids)
+  GET  /api/state?sim_smoke=..&sim_temp=..  simulated fire for the demo button (this browser only)
   GET  /api/points         every NASA test point (O2 vs pressure) for the gaps chart
   POST /api/ask            AI answer grounded in NASA data (needs ANTHROPIC_API_KEY)
   POST /api/scenario       legacy: validates a scenario key and returns that habitat
@@ -252,9 +253,37 @@ def state_payload(h):
             "box": box_status() if live_fresh() else None}
 
 
+def sim_payload(h, smoke, temp_c, flame, crew, hatch_closed, suppressing):
+    """A simulated fire for the demo button. Per request and never stored, so it only
+    affects the browser that asked. Uses the same risk rules and vent logic as the real box."""
+    base_c = 22.0
+    h.update(smoke=max(0.0, min(100.0, smoke)), temp_c=temp_c, flame=flame,
+             heat_rise=temp_c - base_c, source="simulation", label="Simulated fire")
+    r = risk(h)
+    trigger = rise_trigger(h["o2_pct"])
+    heat = temp_c - base_c >= trigger or temp_c >= HEAT_ABSOLUTE_C
+    smoky = h["smoke"] >= SMOKE_VENT
+    box = {"level": r["level"], "mode": "suppressing" if suppressing else "normal",
+           "vent": "closed" if suppressing or heat or smoky else "open",
+           "smoke_detected": smoky, "alarm": r["level"] == "red" and not suppressing,
+           "heat_detected": heat, "temp_rise": round(temp_c - base_c, 1),
+           "rise_trigger": round(trigger, 1), "baseline_c": base_c,
+           "crew": crew, "hatch_cm": 3 if hatch_closed else 40, "hatch_closed": hatch_closed}
+    return {**h, "live": live_fresh(), "risk": r, "scenarios": SCENARIOS,
+            "default_scenario": DEFAULT_SCENARIO, "box": box, "simulated": True}
+
+
 @app.get("/api/state")
 def get_state(scenario: str | None = None, o2_pct: float | None = None,
-              pressure_psi: float | None = None, sensor: bool = False):
+              pressure_psi: float | None = None, sensor: bool = False,
+              sim_smoke: float | None = None, sim_temp: float | None = None,
+              sim_flame: bool = False, sim_crew: bool = False,
+              sim_hatch: bool = False, sim_suppress: bool = False):
+    if sim_smoke is not None and sim_temp is not None:
+        if not -50 <= sim_temp <= 200:
+            raise HTTPException(400, "sim_temp must be between -50 and 200.")
+        return sim_payload(habitat(scenario, o2_pct, pressure_psi, False), sim_smoke, sim_temp,
+                           sim_flame, sim_crew, sim_hatch, sim_suppress)
     return state_payload(habitat(scenario, o2_pct, pressure_psi, sensor))
 
 
@@ -522,9 +551,29 @@ OUTSIDE_PSI = """Results NOT in the PSI database (published elsewhere by NASA):
   and 1 cm and 0.5 cm thick PMMA at 30.3% and 28.8% O2 at about 55 kPa (about 8.0 psi), all at 20 cm/s airflow.
   Source: NASA, "Preliminary Results from the Saffire VI Experiment", ICES 2024.
 - LUCI (Lunar Combustion Investigation, Blue Origin New Shepard, flew Feb 2025): the capsule spun to simulate
-  lunar gravity. It burned SIBAL cotton-fiberglass fabric and a 4 mm acrylic (PMMA) rod in air at normal pressure;
-  flame spread was about 0.9 mm/s over the fabric and about 1.5 mm/s along the rod. Not in PSI yet.
-- FM2 (Flammability of Materials on the Moon): the first fire experiment on the Moon, planned for late 2026."""
+  lunar gravity. It burned SIBAL cotton-fiberglass fabric (5 x 30 cm) and a 4 mm acrylic (PMMA) rod in air at
+  normal pressure, and compared them with the same burns on Earth (fitted spread rates, NASA NTRS 20250010653):
+    SIBAL flame base: Moon 0.9 mm/s vs Earth 1.5 mm/s (ratio 0.6)
+    SIBAL flame tip:  Moon 1.1 mm/s vs Earth 2.8 mm/s (ratio 0.39)
+    PMMA flame tip:   Moon 1.5 mm/s vs Earth 4.0 mm/s (ratio 0.38)
+  So in normal air, flames spread SLOWER in lunar gravity than on Earth. This does not contradict the oxygen-limit
+  results below: a flame can spread more slowly yet still survive at lower oxygen. Not in PSI yet.
+- FM2 (Flammability of Materials on the Moon): the first fire experiment on the Moon, planned for late 2026.
+- Olson & Ferkul 2012, "Evaluating Material Flammability in Microgravity and Martian Gravity Compared to the
+  NASA Standard Normal Gravity Test" (NASA NTRS 20130010991, Table I). Lowest oxygen (molar %) at which each
+  material's flame survived, by gravity (ULOI; low-g values use flame survival during ~5 s drop-tower tests,
+  lunar and Martian gravity made with a centrifuge in the drop tower, so criteria differ from Earth's NASA-STD-6001 test):
+    Mylar G film (10.2 psia):   Earth 21.2 | Mars 18.0 | Moon 15.6 | Orbit (0g, 30 cm/s flow) 17.0
+    Ultem 1000 (10.2 psia):     Earth 23.5 | Mars 22.0 | Moon 21.0 | Orbit 24.0
+    Nomex HT90-40 (14.7 psia):  Earth 23.5 | Mars 19.9 | Moon 21.0 | Orbit 23.0
+  The authors conclude that normal-gravity flammability screening "may not be conservative": all three materials
+  burned at lower oxygen in lunar gravity than on Earth, and Mylar's lunar limit was the lowest of all.
+- Urban et al. 2025, "Solid Fuel Ignition Testing for Lunar Applications" (ICES-2025-392, NASA NTRS 20250002114,
+  Table 2 "Flammability Compensation Factors"). A conservative (95% confidence), model-based estimate of how many
+  oxygen percentage points a material's Earth (NASA Test 1) flammability limit should be adjusted for lunar gravity,
+  extrapolating from the ~35 cm/s buoyant flow on Earth to near-zero flow:
+    PMMA 1.9 | polycarbonate 2.3 | Nomex Velcro 0.32 | P 213 1.4 | Beefy-T cotton shirt, flaming 0.82 | smoldering 1.8
+  Use it as a safety margin: a material that only just passes Earth's test may not pass in lunar gravity."""
 
 # Words a question might use -> text to look for in an investigation's profile.
 KEYWORDS = {
