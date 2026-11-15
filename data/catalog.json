@@ -50,6 +50,11 @@
       "C2H4",
       "C3H8"
     ],
+    "family": "acme",
+    "shape": "sphere-burner",
+    "photo_file": "PSI-10_Representative Image(s)_Flame Design_In Space flame.jpg",
+    "badge": "",
+    "links": [],
     "varied": [
       "Flame type (2 values)",
       "Oxygen (mole fraction) (60 values)",
@@ -102,6 +107,26 @@
     "pressure_range": null,
     "airflow_range": null,
     "samples": [],
+    "family": "acme",
+    "shape": "flat-burner",
+    "photo_file": "",
+    "badge": "Gas burner that imitates burning solids",
+    "links": [
+      {
+        "from": "PSI-20",
+        "to": "PSI-26",
+        "kind": "emulates",
+        "label": "BRE's gas burner imitates burning solids like those in BASS",
+        "source": "Challenge statement"
+      },
+      {
+        "from": "PSI-20",
+        "to": "PSI-98",
+        "kind": "emulates",
+        "label": "BRE's gas burner imitates burning solids like Saffire's fabric",
+        "source": "Challenge statement"
+      }
+    ],
     "varied": [
       "Burner size (mm) (2 values)",
       "Fuel mix (4 values)",
@@ -149,6 +174,11 @@
     ],
     "airflow_range": null,
     "samples": [],
+    "family": "acme",
+    "shape": "jet",
+    "photo_file": "",
+    "badge": "",
+    "links": [],
     "varied": [
       "Fuel MFC (2 values)",
       "N2 MFC (4 values)",
@@ -197,6 +227,19 @@
     ],
     "airflow_range": null,
     "samples": [],
+    "family": "acme",
+    "shape": "jet",
+    "photo_file": "PSI-22_Representative Image(s)_E-Field Flames blue.jpg",
+    "badge": "Mimics partial gravity with an electric field",
+    "links": [
+      {
+        "from": "PSI-22",
+        "to": "PSI-23",
+        "kind": "related",
+        "label": "Both study the structure of laminar diffusion flames on ACME burners",
+        "source": "PSI metadata"
+      }
+    ],
     "varied": [
       "Electric field polarity (2 values)",
       "Fuel mix (4 values)",
@@ -244,6 +287,19 @@
     ],
     "airflow_range": null,
     "samples": [],
+    "family": "acme",
+    "shape": "sphere-burner",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-22",
+        "to": "PSI-23",
+        "kind": "related",
+        "label": "Both study the structure of laminar diffusion flames on ACME burners",
+        "source": "PSI metadata"
+      }
+    ],
     "varied": [
       "Atmosphere (9 values)",
       "Fuel mix (16 values)"
@@ -302,6 +358,26 @@
       "1 cm SIBAL",
       "3/8\" black rod",
       "1 cm wide 200 micron thick PMMA"
+    ],
+    "family": "duct",
+    "shape": "sheet",
+    "photo_file": "PSI-25_Representative Image(s)_BASS-II_flame testing.jpg",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-26",
+        "to": "PSI-25",
+        "kind": "series",
+        "label": "BASS-II followed BASS",
+        "source": "PSI metadata"
+      },
+      {
+        "from": "PSI-62",
+        "to": "PSI-25",
+        "kind": "reanalysis",
+        "label": "Models BASS-II flame spread",
+        "source": "PSI metadata"
+      }
     ],
     "varied": [
       "Sample material (51 values)",
@@ -364,6 +440,47 @@
       "Japan Wax Candle   wake",
       "1 cm sphere"
     ],
+    "family": "duct",
+    "shape": "sheet",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-26",
+        "to": "PSI-25",
+        "kind": "series",
+        "label": "BASS-II followed BASS",
+        "source": "PSI metadata"
+      },
+      {
+        "from": "PSI-20",
+        "to": "PSI-26",
+        "kind": "emulates",
+        "label": "BRE's gas burner imitates burning solids like those in BASS",
+        "source": "Challenge statement"
+      },
+      {
+        "from": "PSI-98",
+        "to": "PSI-26",
+        "kind": "related",
+        "label": "Saffire scaled up the small-sample burns of BASS",
+        "source": "PSI metadata"
+      },
+      {
+        "from": "PSI-26",
+        "to": "PSI-107",
+        "kind": "related",
+        "label": "BASS used the flow duct built for SPICE",
+        "source": "PSI metadata and challenge statement"
+      },
+      {
+        "from": "PSI-62",
+        "to": "PSI-26",
+        "kind": "reanalysis",
+        "label": "Models BASS flame spread",
+        "source": "PSI metadata"
+      }
+    ],
     "varied": [
       "Sample material (31 values)"
     ],
@@ -416,6 +533,19 @@
       "[.60]/[.40] C12H26/iso-dodecane",
       "[.75]/[.25] C12H26/iso-dodecane",
       "C12H26"
+    ],
+    "family": "mdca",
+    "shape": "droplet",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-39",
+        "to": "PSI-69",
+        "kind": "related",
+        "label": "CFI extended FLEX's cool-flame discovery",
+        "source": "PSI metadata"
+      }
     ],
     "varied": [
       "Pressure (7 values)",
@@ -470,6 +600,19 @@
     ],
     "airflow_range": null,
     "samples": [],
+    "family": "smoke",
+    "shape": "dust",
+    "photo_file": "PSI-47_Representative Image(s)_DAFT on ISS.jpg",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-102",
+        "to": "PSI-47",
+        "kind": "instrument",
+        "label": "A SAME smoke instrument was reused to measure dust in DAFT",
+        "source": "PSI metadata and challenge statement"
+      }
+    ],
     "varied": [
       "Actual Day (2 values)",
       "Sampled Location (2 values)"
@@ -510,6 +653,19 @@
     "pressure_range": null,
     "airflow_range": null,
     "samples": [],
+    "family": "ground",
+    "shape": "model",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-60",
+        "to": "PSI-107",
+        "kind": "reanalysis",
+        "label": "Re-analyses SPICE flame images",
+        "source": "PSI metadata"
+      }
+    ],
     "varied": [],
     "fixed": [],
     "test_rows": 0
@@ -545,6 +701,26 @@
     "pressure_range": null,
     "airflow_range": null,
     "samples": [],
+    "family": "ground",
+    "shape": "model",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-62",
+        "to": "PSI-26",
+        "kind": "reanalysis",
+        "label": "Models BASS flame spread",
+        "source": "PSI metadata"
+      },
+      {
+        "from": "PSI-62",
+        "to": "PSI-25",
+        "kind": "reanalysis",
+        "label": "Models BASS-II flame spread",
+        "source": "PSI metadata"
+      }
+    ],
     "varied": [],
     "fixed": [],
     "test_rows": 0
@@ -601,6 +777,19 @@
       "Decane (pure)",
       "Ethanol (pure)",
       "Propanol (95%) Glycerol (5%) (mixture)"
+    ],
+    "family": "mdca",
+    "shape": "droplet",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-69",
+        "to": "PSI-68",
+        "kind": "series",
+        "label": "FLEX-2 followed FLEX",
+        "source": "Same hardware (challenge statement)"
+      }
     ],
     "varied": [
       "Fuel (8 values)",
@@ -661,6 +850,40 @@
       "Methanol",
       "Heptane"
     ],
+    "family": "mdca",
+    "shape": "droplet",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-69",
+        "to": "PSI-68",
+        "kind": "series",
+        "label": "FLEX-2 followed FLEX",
+        "source": "Same hardware (challenge statement)"
+      },
+      {
+        "from": "PSI-39",
+        "to": "PSI-69",
+        "kind": "related",
+        "label": "CFI extended FLEX's cool-flame discovery",
+        "source": "PSI metadata"
+      },
+      {
+        "from": "PSI-117",
+        "to": "PSI-69",
+        "kind": "reanalysis",
+        "label": "3-D model validated with FLEX data",
+        "source": "PSI metadata"
+      },
+      {
+        "from": "PSI-142",
+        "to": "PSI-69",
+        "kind": "reanalysis",
+        "label": "Counterflow study using FLEX conditions",
+        "source": "PSI metadata"
+      }
+    ],
     "varied": [
       "Fuel (2 values)",
       "Pressure (mmHg) (183 values)",
@@ -719,6 +942,33 @@
     ],
     "samples": [
       "SIBAL Fabric"
+    ],
+    "family": "saffire",
+    "shape": "sheet",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-98",
+        "to": "PSI-99",
+        "kind": "series",
+        "label": "Saffire-II followed Saffire-I",
+        "source": "PSI metadata"
+      },
+      {
+        "from": "PSI-20",
+        "to": "PSI-98",
+        "kind": "emulates",
+        "label": "BRE's gas burner imitates burning solids like Saffire's fabric",
+        "source": "Challenge statement"
+      },
+      {
+        "from": "PSI-98",
+        "to": "PSI-26",
+        "kind": "related",
+        "label": "Saffire scaled up the small-sample burns of BASS",
+        "source": "PSI metadata"
+      }
     ],
     "varied": [
       "Material (3 values)",
@@ -783,6 +1033,26 @@
       "PMMA & Nomex",
       "PMMA"
     ],
+    "family": "saffire",
+    "shape": "sheet",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-98",
+        "to": "PSI-99",
+        "kind": "series",
+        "label": "Saffire-II followed Saffire-I",
+        "source": "PSI metadata"
+      },
+      {
+        "from": "PSI-99",
+        "to": "PSI-100",
+        "kind": "series",
+        "label": "Saffire-III followed Saffire-II",
+        "source": "PSI metadata"
+      }
+    ],
     "varied": [
       "Material (6 values)",
       "Sample thickness (7 values)",
@@ -841,6 +1111,19 @@
     ],
     "samples": [
       "SIBAL Fabric"
+    ],
+    "family": "saffire",
+    "shape": "sheet",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-99",
+        "to": "PSI-100",
+        "kind": "series",
+        "label": "Saffire-III followed Saffire-II",
+        "source": "PSI metadata"
+      }
     ],
     "varied": [
       "Direction (2 values)"
@@ -904,6 +1187,19 @@
       "Pyrell",
       "Teflon"
     ],
+    "family": "smoke",
+    "shape": "smoke",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-102",
+        "to": "PSI-101",
+        "kind": "series",
+        "label": "SAME-R reflew the SAME hardware",
+        "source": "PSI metadata"
+      }
+    ],
     "varied": [
       "Sample material (5 values)",
       "Inlet velocity (cm/s) (5 values)"
@@ -961,6 +1257,33 @@
       "Silicone Rubber: same conditions as 1-4",
       "Lampwick: same conditions as 1-4"
     ],
+    "family": "smoke",
+    "shape": "smoke",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-102",
+        "to": "PSI-101",
+        "kind": "series",
+        "label": "SAME-R reflew the SAME hardware",
+        "source": "PSI metadata"
+      },
+      {
+        "from": "PSI-102",
+        "to": "PSI-47",
+        "kind": "instrument",
+        "label": "A SAME smoke instrument was reused to measure dust in DAFT",
+        "source": "PSI metadata and challenge statement"
+      },
+      {
+        "from": "PSI-115",
+        "to": "PSI-102",
+        "kind": "reanalysis",
+        "label": "Simulates SAME smoke particles",
+        "source": "PSI metadata"
+      }
+    ],
     "varied": [
       "Sample material (5 values)",
       "Airflow (2 values)"
@@ -1012,6 +1335,19 @@
       "40% CH4 (balance N2)",
       "100% C2H6",
       "100% C2H4"
+    ],
+    "family": "duct",
+    "shape": "jet",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-106",
+        "to": "PSI-107",
+        "kind": "related",
+        "label": "SLICE used the same flow duct as SPICE",
+        "source": "PSI metadata"
+      }
     ],
     "varied": [
       "Fuel Type (9 values)"
@@ -1072,6 +1408,33 @@
       "Ethylene",
       "75% Propylene"
     ],
+    "family": "duct",
+    "shape": "jet",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-26",
+        "to": "PSI-107",
+        "kind": "related",
+        "label": "BASS used the flow duct built for SPICE",
+        "source": "PSI metadata and challenge statement"
+      },
+      {
+        "from": "PSI-106",
+        "to": "PSI-107",
+        "kind": "related",
+        "label": "SLICE used the same flow duct as SPICE",
+        "source": "PSI metadata"
+      },
+      {
+        "from": "PSI-60",
+        "to": "PSI-107",
+        "kind": "reanalysis",
+        "label": "Re-analyses SPICE flame images",
+        "source": "PSI metadata"
+      }
+    ],
     "varied": [
       "Fuel (7 values)",
       "Nozzle diameter (mm) (3 values)",
@@ -1114,6 +1477,19 @@
     "pressure_range": null,
     "airflow_range": null,
     "samples": [],
+    "family": "ground",
+    "shape": "model",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-115",
+        "to": "PSI-102",
+        "kind": "reanalysis",
+        "label": "Simulates SAME smoke particles",
+        "source": "PSI metadata"
+      }
+    ],
     "varied": [],
     "fixed": [],
     "test_rows": 0
@@ -1149,6 +1525,26 @@
     "pressure_range": null,
     "airflow_range": null,
     "samples": [],
+    "family": "ground",
+    "shape": "model",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-117",
+        "to": "PSI-69",
+        "kind": "reanalysis",
+        "label": "3-D model validated with FLEX data",
+        "source": "PSI metadata"
+      },
+      {
+        "from": "PSI-117",
+        "to": "PSI-142",
+        "kind": "related",
+        "label": "Both model FLEX cool flames",
+        "source": "PSI metadata"
+      }
+    ],
     "varied": [],
     "fixed": [],
     "test_rows": 0
@@ -1192,6 +1588,26 @@
     ],
     "airflow_range": null,
     "samples": [],
+    "family": "ground",
+    "shape": "model",
+    "photo_file": "",
+    "badge": "",
+    "links": [
+      {
+        "from": "PSI-142",
+        "to": "PSI-69",
+        "kind": "reanalysis",
+        "label": "Counterflow study using FLEX conditions",
+        "source": "PSI metadata"
+      },
+      {
+        "from": "PSI-117",
+        "to": "PSI-142",
+        "kind": "related",
+        "label": "Both model FLEX cool flames",
+        "source": "PSI metadata"
+      }
+    ],
     "varied": [
       "Data ID (8 values)",
       "Reference Publication Link (6 values)",
@@ -1254,6 +1670,11 @@
       "30% propane",
       "50% butane"
     ],
+    "family": "acme",
+    "shape": "sphere-burner",
+    "photo_file": "PSI-159_Representative Image(s)_CFI-G_Observation of non-premixed quasi-steady spherical cool flames on porous burners.jpg",
+    "badge": "Highest oxygen tested: up to 85% (from the burner)",
+    "links": [],
     "varied": [
       "Flame type (2 values)",
       "Fuel (7 values)",

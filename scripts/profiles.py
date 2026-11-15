@@ -143,3 +143,83 @@ PROFILES = {
         "measured": "Cool-flame extinction limits vs oxygen concentration",
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Connection map: hardware families, fuel shapes, photos and links.
+# ---------------------------------------------------------------------------
+
+# Experiments run on the same hardware are the most directly comparable.
+FAMILIES = [
+    {"key": "acme", "label": "ACME gas-flame burners",
+     "where": "Combustion Integrated Rack, ISS",
+     "ids": ["PSI-10", "PSI-20", "PSI-21", "PSI-22", "PSI-23", "PSI-159"]},
+    {"key": "mdca", "label": "Droplet combustion apparatus (MDCA)",
+     "where": "Combustion Integrated Rack, ISS",
+     "ids": ["PSI-69", "PSI-68", "PSI-39"]},
+    {"key": "duct", "label": "Fan-driven flow duct built for SPICE",
+     "where": "Microgravity Science Glovebox, ISS",
+     "ids": ["PSI-26", "PSI-25", "PSI-107", "PSI-106"]},
+    {"key": "saffire", "label": "Saffire large-scale fires",
+     "where": "Cygnus cargo ship, after leaving the ISS",
+     "ids": ["PSI-98", "PSI-99", "PSI-100"]},
+    {"key": "smoke", "label": "Smoke and dust instruments",
+     "where": "Microgravity Science Glovebox and cabin, ISS",
+     "ids": ["PSI-102", "PSI-101", "PSI-47"]},
+    {"key": "ground", "label": "Ground studies of flight data",
+     "where": "Labs and computer models on Earth",
+     "ids": ["PSI-62", "PSI-60", "PSI-115", "PSI-117", "PSI-142"]},
+]
+
+# What burned, as a shape (drives the small drawing shown when there's no photo).
+SHAPES = {
+    "PSI-10": "sphere-burner", "PSI-20": "flat-burner", "PSI-21": "jet", "PSI-22": "jet",
+    "PSI-23": "sphere-burner", "PSI-159": "sphere-burner",
+    "PSI-39": "droplet", "PSI-68": "droplet", "PSI-69": "droplet",
+    "PSI-25": "sheet", "PSI-26": "sheet", "PSI-106": "jet", "PSI-107": "jet",
+    "PSI-98": "sheet", "PSI-99": "sheet", "PSI-100": "sheet",
+    "PSI-101": "smoke", "PSI-102": "smoke", "PSI-47": "dust",
+    "PSI-60": "model", "PSI-62": "model", "PSI-115": "model", "PSI-117": "model", "PSI-142": "model",
+}
+
+# NASA's representative images in PSI (only these five investigations have one).
+PHOTOS = {
+    "PSI-10": "PSI-10_Representative Image(s)_Flame Design_In Space flame.jpg",
+    "PSI-22": "PSI-22_Representative Image(s)_E-Field Flames blue.jpg",
+    "PSI-25": "PSI-25_Representative Image(s)_BASS-II_flame testing.jpg",
+    "PSI-47": "PSI-47_Representative Image(s)_DAFT on ISS.jpg",
+    "PSI-159": "PSI-159_Representative Image(s)_CFI-G_Observation of non-premixed quasi-steady spherical cool flames on porous burners.jpg",
+}
+
+# Short notes shown on the map.
+BADGES = {
+    "PSI-20": "Gas burner that imitates burning solids",
+    "PSI-22": "Mimics partial gravity with an electric field",
+    "PSI-159": "Highest oxygen tested: up to 85% (from the burner)",
+}
+
+# kind: series (same experiment flown again), instrument (hardware reused),
+# reanalysis (ground study of flight data), emulates, related.
+# source: where the link comes from.
+LINKS = [
+    {"from": "PSI-26", "to": "PSI-25", "kind": "series", "label": "BASS-II followed BASS", "source": "PSI metadata"},
+    {"from": "PSI-69", "to": "PSI-68", "kind": "series", "label": "FLEX-2 followed FLEX", "source": "Same hardware (challenge statement)"},
+    {"from": "PSI-98", "to": "PSI-99", "kind": "series", "label": "Saffire-II followed Saffire-I", "source": "PSI metadata"},
+    {"from": "PSI-99", "to": "PSI-100", "kind": "series", "label": "Saffire-III followed Saffire-II", "source": "PSI metadata"},
+    {"from": "PSI-102", "to": "PSI-101", "kind": "series", "label": "SAME-R reflew the SAME hardware", "source": "PSI metadata"},
+    {"from": "PSI-102", "to": "PSI-47", "kind": "instrument", "label": "A SAME smoke instrument was reused to measure dust in DAFT", "source": "PSI metadata and challenge statement"},
+    {"from": "PSI-20", "to": "PSI-26", "kind": "emulates", "label": "BRE's gas burner imitates burning solids like those in BASS", "source": "Challenge statement"},
+    {"from": "PSI-20", "to": "PSI-98", "kind": "emulates", "label": "BRE's gas burner imitates burning solids like Saffire's fabric", "source": "Challenge statement"},
+    {"from": "PSI-98", "to": "PSI-26", "kind": "related", "label": "Saffire scaled up the small-sample burns of BASS", "source": "PSI metadata"},
+    {"from": "PSI-26", "to": "PSI-107", "kind": "related", "label": "BASS used the flow duct built for SPICE", "source": "PSI metadata and challenge statement"},
+    {"from": "PSI-106", "to": "PSI-107", "kind": "related", "label": "SLICE used the same flow duct as SPICE", "source": "PSI metadata"},
+    {"from": "PSI-22", "to": "PSI-23", "kind": "related", "label": "Both study the structure of laminar diffusion flames on ACME burners", "source": "PSI metadata"},
+    {"from": "PSI-39", "to": "PSI-69", "kind": "related", "label": "CFI extended FLEX's cool-flame discovery", "source": "PSI metadata"},
+    {"from": "PSI-62", "to": "PSI-26", "kind": "reanalysis", "label": "Models BASS flame spread", "source": "PSI metadata"},
+    {"from": "PSI-62", "to": "PSI-25", "kind": "reanalysis", "label": "Models BASS-II flame spread", "source": "PSI metadata"},
+    {"from": "PSI-60", "to": "PSI-107", "kind": "reanalysis", "label": "Re-analyses SPICE flame images", "source": "PSI metadata"},
+    {"from": "PSI-115", "to": "PSI-102", "kind": "reanalysis", "label": "Simulates SAME smoke particles", "source": "PSI metadata"},
+    {"from": "PSI-117", "to": "PSI-69", "kind": "reanalysis", "label": "3-D model validated with FLEX data", "source": "PSI metadata"},
+    {"from": "PSI-142", "to": "PSI-69", "kind": "reanalysis", "label": "Counterflow study using FLEX conditions", "source": "PSI metadata"},
+    {"from": "PSI-117", "to": "PSI-142", "kind": "related", "label": "Both model FLEX cool flames", "source": "PSI metadata"},
+]

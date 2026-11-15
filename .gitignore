@@ -7,3 +7,6 @@ data/*
 !data/.gitkeep
 !data/tests.csv
 !data/catalog.json
+
+!data/map.json
+data/photos/

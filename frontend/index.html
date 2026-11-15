@@ -95,12 +95,33 @@
       <div class="compare-scroll"><table id="compare-table" class="compare-table"></table></div>
     </section>
 
+    <section id="map" class="map" aria-label="How the experiments connect">
+      <div class="map-head">
+        <h2>How the experiments connect</h2>
+        <p class="sub">Each row is one set of hardware, so experiments in the same row compare most directly. Hover an experiment to see its links; click to keep it selected.</p>
+      </div>
+      <div class="map-body">
+        <div id="map-wrap" class="map-wrap">
+          <svg id="map-links" class="map-links" aria-hidden="true"></svg>
+          <div id="map-lanes" class="map-lanes"></div>
+        </div>
+        <aside id="map-detail" class="map-detail" aria-live="polite"></aside>
+      </div>
+      <ul class="map-legend" aria-label="Link types">
+        <li><span class="lk k-series"></span>Flown again</li>
+        <li><span class="lk k-instrument"></span>Instrument reused</li>
+        <li><span class="lk k-emulates"></span>Imitates another fuel</li>
+        <li><span class="lk k-reanalysis"></span>Studied on the ground</li>
+        <li><span class="lk k-related"></span>Related</li>
+      </ul>
+    </section>
+
     <section class="gaps" aria-label="Where NASA has data">
       <h2>Where NASA has tested, and where it hasn’t</h2>
-      <p class="sub">Every dot is one test run on the space station. The ring is your habitat; the shaded band is the oxygen range planned for Moon bases.</p>
+      <p class="sub">Every dot is one test run in orbit. The ring is your habitat; the shaded band is the oxygen range planned for Moon bases.</p>
       <div class="chart-wrap"><canvas id="gap-chart"></canvas></div>
       <p id="saffire-note" class="callout" hidden>NASA’s Saffire-VI burned fabric and acrylic at 29–31% oxygen and about 7.9 psi in its final 2023–24 flight. Those results aren’t in the PSI data yet. <a href="https://ntrs.nasa.gov/citations/20240002981" target="_blank" rel="noopener">NASA report</a></p>
-      <p class="note">No fire data exists yet for lunar gravity. NASA’s FM2 experiment is planned to fly to the Moon in late 2026.</p>
+      <p class="note">No lunar-gravity data in PSI yet. NASA’s LUCI burned fabric and acrylic in simulated lunar gravity (spinning New Shepard rocket, normal air) in 2025; FM2 on the Moon is planned for late 2026.</p>
     </section>
 
     <section class="ask" aria-label="Ask about this habitat">

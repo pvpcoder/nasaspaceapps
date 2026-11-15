@@ -5,12 +5,18 @@ Run from the project root:   uvicorn backend.app:app --reload --host 0.0.0.0 --p
 Then open http://localhost:8000
 
 Endpoints
-  POST /api/reading        ESP32 sends live sensor readings here (JSON)
-  GET  /api/state          latest habitat conditions + risk (dashboard + ESP32 poll this)
-  POST /api/scenario       dashboard sets a preset scenario (when no box is connected)
-  GET  /api/rank           experiments ranked for the current conditions
+  POST /api/reading        ESP32 sends live sensor readings here (JSON). Shared by everyone.
+  GET  /api/state          habitat conditions + risk for the habitat in the query
+  GET  /api/rank           experiments ranked for that habitat
+  GET  /api/compare        side-by-side profiles (ids=PSI-1,PSI-2,...)
+  GET  /api/export         CSV of test runs (scope=near or scope=ids)
   GET  /api/points         every NASA test point (O2 vs pressure) for the gaps chart
   POST /api/ask            AI answer grounded in NASA data (needs ANTHROPIC_API_KEY)
+  POST /api/scenario       legacy: validates a scenario key and returns that habitat
+
+Habitat is per request, not stored on the server. Pass ?scenario=<key> (default
+moonbase), or ?o2_pct=..&pressure_psi=.., plus &sensor=true to use live sensor
+readings when the box is connected. Unknown scenario keys return 400.
 """
 import csv
 import io
@@ -20,9 +26,9 @@ import re
 import time
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -47,6 +53,7 @@ def load():
     return catalog, tests
 
 CATALOG, TESTS = load()
+MAP = json.loads((DATA / "map.json").read_text()) if (DATA / "map.json").exists() else {"families": [], "links": []}
 BY_ID = {c["id"]: c for c in CATALOG}
 
 # ---------- habitat state ----------
@@ -60,10 +67,43 @@ SCENARIOS = {
     "suit":     {"label": "Spacesuit",                  "o2_pct": 100.0, "pressure_psi": 4.3},
 }
 
-STATE = {
-    "source": "scenario", "scenario": "iss", **SCENARIOS["iss"],
-    "smoke": 0.0, "temp_c": 22.0, "dust": None, "flame": False, "updated": time.time(),
-}
+DEFAULT_SCENARIO = "moonbase"
+
+# Live sensor readings are shared (there's one physical box). The habitat a visitor
+# is looking at is NOT shared: each request says which habitat it means.
+LIVE = {"o2_pct": None, "pressure_psi": None, "smoke": None, "temp_c": None,
+        "dust": None, "flame": None, "updated": 0.0}
+LIVE_TIMEOUT_S = 10
+
+
+def live_fresh():
+    return time.time() - LIVE["updated"] < LIVE_TIMEOUT_S
+
+
+def habitat(scenario=None, o2_pct=None, pressure_psi=None, sensor=False):
+    """Resolve the conditions a request is asking about.
+    scenario: a preset key (default: moonbase). o2_pct/pressure_psi override it.
+    sensor: use the live sensor box readings (if fresh) on top."""
+    key = scenario or DEFAULT_SCENARIO
+    if key not in SCENARIOS:
+        raise HTTPException(400, f"Unknown scenario '{key}'. Use one of: {', '.join(SCENARIOS)}.")
+    base = SCENARIOS[key]
+    h = {"scenario": key, "label": base["label"], "source": "preset",
+         "o2_pct": base["o2_pct"], "pressure_psi": base["pressure_psi"],
+         "smoke": 0.0, "temp_c": 22.0, "dust": None, "flame": False}
+    if o2_pct is not None:
+        if not 0 < o2_pct <= 100:
+            raise HTTPException(400, "o2_pct must be between 0 and 100.")
+        h.update(o2_pct=o2_pct, source="custom", label="Custom conditions")
+    if pressure_psi is not None:
+        if not 0 < pressure_psi <= 30:
+            raise HTTPException(400, "pressure_psi must be between 0 and 30.")
+        h.update(pressure_psi=pressure_psi, source="custom", label="Custom conditions")
+    if sensor and live_fresh():
+        h.update({k: LIVE[k] for k in ("o2_pct", "pressure_psi", "smoke", "temp_c", "dust", "flame")
+                  if LIVE[k] is not None})
+        h.update(source="sensor", label="Sensor box (live)")
+    return h
 
 
 class Reading(BaseModel):
@@ -75,10 +115,6 @@ class Reading(BaseModel):
     flame: bool | None = None
 
 
-class Scenario(BaseModel):
-    key: str
-
-
 SEA_LEVEL_PPO2_PSI = 0.21 * 14.696   # ≈ 3.1 psi
 
 RISK_FORMULA = {
@@ -86,7 +122,8 @@ RISK_FORMULA = {
     "smoke": "Smoke reading (0–100) × 0.25, maximum 25",
     "heat": "0 at 30 °C or below, rising to 15 at 60 °C: 15 × (°C − 30) ÷ 30",
     "flame": "25 if the flame sensor detects a flame, otherwise 0",
-    "levels": "Nominal under 30 · Caution 30–59 · Warning 60 or more, or any flame",
+    "levels": ("Nominal under 30 · Caution 30–59 · Warning 60 or more. Overrides: any flame means "
+               "Warning; smoke of 85 or more means Warning; smoke of 60 or more means at least Caution"),
     "why_concentration": ("The oxygen score uses oxygen concentration (%), not partial pressure. "
                           "A Moon base at 34% O₂ and 8.2 psi has a lower oxygen partial pressure "
                           "than sea level, yet NASA expects materials to burn more easily there: "
@@ -103,7 +140,13 @@ def risk(state):
     heat = max(0.0, min(15.0, ((state.get("temp_c") or 22) - 30) / 30 * 15))
     flame = 25.0 if state.get("flame") else 0.0
     score = min(100.0, atmo + smoke + heat + flame)
-    level = "red" if score >= 60 or state.get("flame") else "yellow" if score >= 30 else "green"
+    smoke_reading = state.get("smoke") or 0
+    if score >= 60 or state.get("flame") or smoke_reading >= 85:
+        level = "red"
+    elif score >= 30 or smoke_reading >= 60:
+        level = "yellow"
+    else:
+        level = "green"
     ppo2 = o2 / 100 * state["pressure_psi"]
     explain = (f"Oxygen adds {round(atmo)} because the air is {o2:.0f}% oxygen "
                f"(Earth: 21%). Oxygen partial pressure here is {ppo2:.1f} psi vs "
@@ -116,23 +159,31 @@ def risk(state):
 
 @app.post("/api/reading")
 def post_reading(r: Reading):
-    STATE.update({k: v for k, v in r.model_dump().items() if v is not None})
-    STATE["source"], STATE["updated"] = "sensor", time.time()
+    LIVE.update({k: v for k, v in r.model_dump().items() if v is not None})
+    LIVE["updated"] = time.time()
     # Small reply so the ESP32 can set its LEDs/buzzer from it.
-    return {"level": risk(STATE)["level"]}
+    return {"level": risk(habitat(sensor=True))["level"]}
 
 
-@app.post("/api/scenario")
-def set_scenario(s: Scenario):
-    STATE.update({"source": "scenario", "scenario": s.key, **SCENARIOS[s.key],
-                  "smoke": 0.0, "temp_c": 22.0, "flame": False, "updated": time.time()})
-    return get_state()
+def state_payload(h):
+    return {**h, "live": live_fresh(), "risk": risk(h), "scenarios": SCENARIOS,
+            "default_scenario": DEFAULT_SCENARIO}
 
 
 @app.get("/api/state")
-def get_state():
-    live = STATE["source"] == "sensor" and time.time() - STATE["updated"] < 10
-    return {**STATE, "live": live, "risk": risk(STATE), "scenarios": SCENARIOS}
+def get_state(scenario: str | None = None, o2_pct: float | None = None,
+              pressure_psi: float | None = None, sensor: bool = False):
+    return state_payload(habitat(scenario, o2_pct, pressure_psi, sensor))
+
+
+class Scenario(BaseModel):
+    key: str
+
+
+@app.post("/api/scenario")
+def check_scenario(s: Scenario):
+    """Kept for older clients. Stateless: validates the key and returns that habitat."""
+    return state_payload(habitat(s.key))
 
 # ---------- ranking ----------
 
@@ -175,8 +226,10 @@ def closeness(test, o2, p_atm):
 
 
 @app.get("/api/rank")
-def rank(area: str = "all", limit: int = 30):
-    o2, p_atm = STATE["o2_pct"], STATE["pressure_psi"] / PSI_PER_ATM
+def rank(area: str = "all", limit: int = 30, scenario: str | None = None,
+         o2_pct: float | None = None, pressure_psi: float | None = None, sensor: bool = False):
+    h = habitat(scenario, o2_pct, pressure_psi, sensor)
+    o2, p_atm = h["o2_pct"], h["pressure_psi"] / PSI_PER_ATM
     results = []
     for inv in CATALOG:
         tests = [t for t in TESTS if t["psi_id"] == inv["id"]]
@@ -196,6 +249,8 @@ def rank(area: str = "all", limit: int = 30):
             "id": inv["id"], "acronym": inv["acronym"], "title": inv["title"],
             "doi": inv.get("doi"), "url": inv["url"], "areas": inv.get("areas", []),
             "fuel_kind": inv.get("fuel_kind"), "crew_relevance": inv.get("crew_relevance", 1),
+            "shape": inv.get("shape", "model"), "photo": bool(inv.get("photo_file")),
+            "family": inv.get("family", "other"),
             "score": round(score, 1),
             "match": round(best, 2), "tests_total": n_tests, "tests_near": near,
             "o2_range": [min(o2s), max(o2s)] if o2s else None,
@@ -237,15 +292,18 @@ def points():
 # ---------- compare + export ----------
 
 COMPARE_FIELDS = ["id", "acronym", "title", "doi", "url", "project_type", "areas", "hardware",
+                  "shape", "family",
                   "fuel", "samples", "measured", "agents", "o2_range", "pressure_range",
                   "airflow_range", "airflow_note",
                   "varied", "fixed", "test_rows", "objectives"]
 
 
 @app.get("/api/compare")
-def compare(ids: str):
+def compare(ids: str, scenario: str | None = None, o2_pct: float | None = None,
+            pressure_psi: float | None = None, sensor: bool = False):
     """Side-by-side profiles for up to 3 investigations (comma-separated PSI IDs)."""
-    o2, p_atm = STATE["o2_pct"], STATE["pressure_psi"] / PSI_PER_ATM
+    h = habitat(scenario, o2_pct, pressure_psi, sensor)
+    o2, p_atm = h["o2_pct"], h["pressure_psi"] / PSI_PER_ATM
     out = []
     for pid in [i.strip() for i in ids.split(",") if i.strip()][:3]:
         inv = BY_ID.get(pid)
@@ -257,6 +315,7 @@ def compare(ids: str):
         prof["hardware"] = prof["hardware"] if isinstance(prof["hardware"], str) else ""
         prof["objectives"] = (prof["objectives"] or "")[:500]
         prof["tests_near"] = len(near)
+        prof["photo"] = bool(inv.get("photo_file"))
         out.append(prof)
     return {"conditions": {"o2_pct": o2, "pressure_atm": round(p_atm, 3)}, "investigations": out}
 
@@ -267,11 +326,13 @@ EXPORT_COLUMNS = ["psi_id", "acronym", "doi", "o2_pct", "pressure_atm", "airflow
 
 
 @app.get("/api/export")
-def export(scope: str = "near", ids: str = ""):
+def export(scope: str = "near", ids: str = "", scenario: str | None = None,
+           o2_pct: float | None = None, pressure_psi: float | None = None, sensor: bool = False):
     """Download NASA test runs as CSV.
     scope=near: runs close to the current habitat (all experiments)
     scope=ids:  every run from the listed experiments (comma-separated PSI IDs)"""
-    o2, p_atm = STATE["o2_pct"], STATE["pressure_psi"] / PSI_PER_ATM
+    h = habitat(scenario, o2_pct, pressure_psi, sensor)
+    o2, p_atm = h["o2_pct"], h["pressure_psi"] / PSI_PER_ATM
     wanted = {i.strip() for i in ids.split(",") if i.strip()}
     buf = io.StringIO()
     w = csv.writer(buf)
@@ -286,16 +347,76 @@ def export(scope: str = "near", ids: str = ""):
                     t["o2_pct"], t["pressure_atm"], t["airflow_cms"], t["fuel"], t["outcome"],
                     t.get("outcome_col", ""), "yes" if is_near(t, o2, p_atm) else "no",
                     "" if match is None else round(match, 2), t["o2_note"], t["table"], t["row"]])
-    name = (f"flamewatch_runs_near_{round(o2)}pct_{STATE['pressure_psi']:.1f}psi.csv" if scope == "near"
+    name = (f"flamewatch_runs_near_{round(o2)}pct_{h['pressure_psi']:.1f}psi.csv" if scope == "near"
             else f"flamewatch_runs_{'_'.join(sorted(wanted)) or 'none'}.csv")
     return Response(buf.getvalue(), media_type="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+# ---------- connection map + photos ----------
+
+@app.get("/api/map")
+def experiment_map(scenario: str | None = None, o2_pct: float | None = None,
+                   pressure_psi: float | None = None, sensor: bool = False):
+    """Experiments grouped by shared hardware, with the links between them."""
+    h = habitat(scenario, o2_pct, pressure_psi, sensor)
+    o2, p_atm = h["o2_pct"], h["pressure_psi"] / PSI_PER_ATM
+    nodes = []
+    for inv in CATALOG:
+        tests = [t for t in TESTS if t["psi_id"] == inv["id"]]
+        near = {(t["table"], t["row"]) for t in tests if is_near(t, o2, p_atm)}
+        nodes.append({"id": inv["id"], "acronym": inv.get("acronym") or "", "title": inv["title"],
+                      "url": inv["url"], "family": inv.get("family", "other"),
+                      "shape": inv.get("shape", "model"), "photo": bool(inv.get("photo_file")),
+                      "badge": inv.get("badge", ""), "areas": inv.get("areas", []),
+                      "project_type": inv.get("project_type", ""),
+                      "tests_total": inv.get("test_rows", 0), "tests_near": len(near)})
+    return {"families": MAP["families"], "links": MAP["links"], "nodes": nodes,
+            "near_rule": NEAR_RULE_TEXT}
+
+
+PHOTO_DIR = DATA / "photos"
+PSI_API = "https://psi.nasa.gov/geode-py/ws"
+
+
+@app.get("/api/photo/{pid}")
+def photo(pid: str):
+    """NASA's representative image for an investigation. Downloaded from PSI the
+    first time, then served from data/photos/ (so it works offline afterwards)."""
+    inv = BY_ID.get(pid)
+    if not inv or not inv.get("photo_file"):
+        raise HTTPException(404, "No NASA image for this investigation.")
+    path = PHOTO_DIR / f"{pid}.jpg"
+    if not path.exists():
+        import requests
+        PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+        for version in (1, 2, 3, 4, 5):
+            try:
+                r = requests.get(f"{PSI_API}/studies/{pid}/download", timeout=15,
+                                 params={"file": inv["photo_file"], "version": version, "redirect": "false"})
+                url = r.text.strip().strip('"') if r.ok else ""
+                if not url.startswith("http"):
+                    continue
+                img = requests.get(url, timeout=30)
+                if img.ok and img.headers.get("content-type", "").startswith("image"):
+                    path.write_bytes(img.content)
+                    break
+            except requests.RequestException:
+                continue
+        if not path.exists():
+            raise HTTPException(404, "Couldn't download the NASA image right now.")
+    return FileResponse(path, media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 # ---------- AI ----------
 
 class Question(BaseModel):
     question: str
+    scenario: str | None = None
+    o2_pct: float | None = None
+    pressure_psi: float | None = None
+    sensor: bool = False
 
 
 def trim(text, limit):
@@ -318,7 +439,9 @@ OUTSIDE_PSI = """Results NOT in the PSI database (published elsewhere by NASA):
 - Saffire-VI (Cygnus, final flight 2023-24): burned SIBAL fabric at 31.0% O2 and 54.1 kPa (about 7.8 psi),
   and 1 cm and 0.5 cm thick PMMA at 30.3% and 28.8% O2 at about 55 kPa (about 8.0 psi), all at 20 cm/s airflow.
   Source: NASA, "Preliminary Results from the Saffire VI Experiment", ICES 2024.
-- LUCI (Blue Origin New Shepard, spun to simulate lunar gravity): measured flame spread over SIBAL fabric (~0.9 mm/s) and PMMA (~1.5 mm/s).
+- LUCI (Lunar Combustion Investigation, Blue Origin New Shepard, flew Feb 2025): the capsule spun to simulate
+  lunar gravity. It burned SIBAL cotton-fiberglass fabric and a 4 mm acrylic (PMMA) rod in air at normal pressure;
+  flame spread was about 0.9 mm/s over the fabric and about 1.5 mm/s along the rod. Not in PSI yet.
 - FM2 (Flammability of Materials on the Moon): the first fire experiment on the Moon, planned for late 2026."""
 
 # Words a question might use -> text to look for in an investigation's profile.
@@ -396,11 +519,11 @@ def detail_block(pid, o2, p_atm):
             f"Runs closest to this habitat (NEAR = {NEAR_RULE_TEXT}):\n" + "\n".join(rows))
 
 
-def build_context(question):
+def build_context(question, h):
     """All 24 investigations in summary, plus details for the best matches to the
     habitat and for anything the question mentions. Independent of UI filters."""
-    o2, p_atm = STATE["o2_pct"], STATE["pressure_psi"] / PSI_PER_ATM
-    top = [r["id"] for r in rank(area="all", limit=5)["results"]]
+    o2, p_atm = h["o2_pct"], h["pressure_psi"] / PSI_PER_ATM
+    top = [r["id"] for r in rank(area="all", limit=5, o2_pct=o2, pressure_psi=h["pressure_psi"])["results"]]
     named = [pid for pid in mentioned(question) if pid not in top][:5]
     summary = "\n".join(summary_line(inv) for inv in CATALOG)
     details = "\n\n".join(detail_block(pid, o2, p_atm) for pid in top + named)
@@ -430,9 +553,10 @@ How to answer:
 
 @app.post("/api/ask")
 def ask(q: Question):
-    st = get_state()
-    context, used = build_context(q.question)
-    prompt = (f"Current habitat: {st.get('label') or st.get('scenario')}, {st['o2_pct']}% O2, "
+    h = habitat(q.scenario, q.o2_pct, q.pressure_psi, q.sensor)
+    st = state_payload(h)
+    context, used = build_context(q.question, h)
+    prompt = (f"Current habitat: {st['label']}, {st['o2_pct']}% O2, "
               f"{st['pressure_psi']} psi, smoke {st['smoke']}/100, temp {st['temp_c']} C, "
               f"fire risk {st['risk']['score']}/100 ({st['risk']['level']}).\n\n"
               f"{context}\n\nQuestion: {q.question}")

@@ -10,6 +10,18 @@ let lastKey = "";
 let showAll = false;
 let chart;
 let state;
+
+// The habitat is per browser (saved in localStorage), not shared on the server.
+const HABITAT_KEY = "flamewatch.habitat";
+const store = {
+  get() { try { return localStorage.getItem(HABITAT_KEY); } catch { return null; } },
+  set(v) { try { localStorage.setItem(HABITAT_KEY, v); } catch { /* storage unavailable */ } },
+};
+let habitatKey = store.get() || "moonbase";
+let followLive = true;   // switch to the sensor box automatically when it sends data
+
+// Query string every request carries, so the server knows which habitat we mean.
+const hp = () => `scenario=${encodeURIComponent(habitatKey)}&sensor=${followLive}`;
 const selected = new Set();   // PSI IDs ticked for comparison (max 3)
 
 async function api(path, opts) {
@@ -27,9 +39,40 @@ async function api(path, opts) {
 const fmt = (n, d = 1) => (n == null ? "–" : Number(n).toFixed(d));
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
+// ---------- fuel-shape drawings + NASA photo thumbnails ----------
+// A small drawing of what burned, used when NASA has no photo of the experiment.
+const SHAPE_SVG = {
+  "sheet": '<rect x="9" y="8" width="22" height="24" rx="1.5"/><path d="M9 14h22M9 20h22M9 26h22" class="soft"/><path d="M9 32c2-4 5-4 6 0" class="flame"/>',
+  "droplet": '<path d="M4 20h10M26 20h10" class="soft"/><circle cx="20" cy="20" r="5"/><circle cx="20" cy="20" r="11" class="flame dash"/>',
+  "sphere-burner": '<path d="M20 26v10" /><circle cx="20" cy="18" r="7"/><circle cx="20" cy="18" r="13" class="flame dash"/>',
+  "flat-burner": '<path d="M20 26v10"/><ellipse cx="20" cy="24" rx="11" ry="3"/><path d="M10 20c3-9 17-9 20 0" class="flame dash"/>',
+  "jet": '<path d="M17 36V24h6v12"/><path d="M20 23c-6-4-6-12 0-18c6 6 6 14 0 18z" class="flame"/>',
+  "smoke": '<path d="M12 34c-4-5 4-8 0-13s4-8 0-13M20 34c-4-5 4-8 0-13s4-8 0-13M28 34c-4-5 4-8 0-13s4-8 0-13" class="soft"/>',
+  "dust": '<g class="dots"><circle cx="11" cy="12" r="1.6"/><circle cx="24" cy="9" r="1.2"/><circle cx="30" cy="17" r="1.8"/><circle cx="16" cy="21" r="1.3"/><circle cx="26" cy="27" r="1.5"/><circle cx="12" cy="30" r="1.8"/><circle cx="20" cy="32" r="1.1"/><circle cx="32" cy="31" r="1.2"/></g>',
+  "model": '<rect x="8" y="8" width="24" height="24" rx="1.5"/><path d="M16 8v24M24 8v24M8 16h24M8 24h24" class="soft"/><path d="M10 30c6-2 8-12 20-18" class="flame"/>',
+};
+const SHAPE_WORDS = { "sheet": "Solid sample (fabric or plastic)", "droplet": "Fuel droplet", "sphere-burner": "Spherical gas burner",
+  "flat-burner": "Flat gas burner", "jet": "Gas jet flame", "smoke": "Smoke from heated materials", "dust": "Dust (no fire)", "model": "Computer model" };
+
+function shapeIcon(shape, size = 40) {
+  return `<svg class="shape" width="${size}" height="${size}" viewBox="0 0 40 40" role="img" aria-label="${esc(SHAPE_WORDS[shape] || "Experiment")}">${SHAPE_SVG[shape] || SHAPE_SVG.model}</svg>`;
+}
+
+// NASA's photo when PSI has one; the shape drawing otherwise (or if the photo fails).
+function thumb(x, size = 40) {
+  if (!x.photo) return `<span class="thumb" style="--s:${size}px">${shapeIcon(x.shape, size)}</span>`;
+  return `<span class="thumb photo" style="--s:${size}px" data-shape="${esc(x.shape)}"><img src="${API}/api/photo/${esc(x.id)}" alt="NASA image of ${esc(x.acronym || x.id)}" loading="lazy" onerror="this.parentNode.classList.remove('photo');this.replaceWith(document.createRange().createContextualFragment(shapeIcon(this.parentNode.dataset.shape, ${size})))"></span>`;
+}
+
 // ---------- habitat panel ----------
 async function refreshState() {
-  state = await api("/api/state");
+  try {
+    state = await api(`/api/state?${hp()}`);
+  } catch (e) {
+    // A saved habitat that no longer exists: fall back to the default.
+    if (habitatKey !== "moonbase") { habitatKey = "moonbase"; store.set(habitatKey); }
+    throw e;
+  }
   const sel = $("scenario");
   if (!sel.options.length) {
     sel.add(new Option("Sensor box (not connected)", "live"));
@@ -38,10 +81,11 @@ async function refreshState() {
   // The sensor option turns on by itself as soon as live readings arrive.
   sel.options[0].textContent = state.live ? "Sensor box (live)" : "Sensor box (not connected)";
   sel.options[0].disabled = !state.live;
-  if (document.activeElement !== sel) sel.value = state.live ? "live" : state.scenario;
+  if (document.activeElement !== sel) sel.value = state.source === "sensor" ? "live" : habitatKey;
 
-  $("source").textContent = state.live ? "Live from sensor box" : "Preset habitat";
-  $("source").classList.toggle("live", state.live);
+  const usingSensor = state.source === "sensor";
+  $("source").textContent = usingSensor ? "Live from sensor box" : state.live ? "Preset habitat (sensor box connected)" : "Preset habitat";
+  $("source").classList.toggle("live", usingSensor);
 
   $("r-o2").textContent = fmt(state.o2_pct);
   $("r-p").textContent = fmt(state.pressure_psi);
@@ -67,21 +111,28 @@ async function refreshState() {
   // Saffire-VI burned cabin materials at 29–31% O2, outside the PSI data.
   $("saffire-note").hidden = state.o2_pct < 28;
 
-  const key = `${Math.round(state.o2_pct)}|${state.pressure_psi.toFixed(1)}|${state.live}|${$("area").value}|${showAll}`;
+  const key = `${Math.round(state.o2_pct)}|${state.pressure_psi.toFixed(1)}|${state.source}|${$("area").value}|${showAll}`;
   if (key !== lastKey) {
     const habitatChanged = key.split("|").slice(0, 3).join() !== lastKey.split("|").slice(0, 3).join();
     lastKey = key;
     markHabitat();
     await refreshRank();
+    if (habitatChanged || !mapData) await refreshMap();
     // Keep an open comparison in step with the habitat.
     if (habitatChanged && !$("compare").hidden && selected.size >= 2) await showCompare(false);
   }
 }
 
-$("scenario").addEventListener("change", async (e) => {
-  if (e.target.value === "live") return;   // live readings drive the habitat already
-  await api("/api/scenario", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key: e.target.value }) });
+$("scenario").addEventListener("change", (e) => {
+  if (e.target.value === "live") {
+    followLive = true;
+  } else {
+    habitatKey = e.target.value;
+    store.set(habitatKey);
+    // Picking a preset while the sensor is live means "stop following the sensor".
+    if (state && state.live) followLive = false;
+  }
+  e.target.blur();
   refreshState();
 });
 $("area").addEventListener("change", () => { lastKey = ""; refreshState(); });
@@ -112,7 +163,7 @@ function writeFinding(results) {
 
 // ---------- experiments table ----------
 async function refreshRank() {
-  const d = await api(`/api/rank?area=${$("area").value}&limit=30`);
+  const d = await api(`/api/rank?area=${$("area").value}&limit=30&${hp()}`);
   writeFinding(d.results);
   $("near-rule").textContent = `“Runs near you” counts test runs ${d.near_rule} of this habitat. ${d.near_note}`;
   $("near-head").title = `Counts test runs ${d.near_rule} of this habitat`;
@@ -121,10 +172,13 @@ async function refreshRank() {
     <tr class="exp-row" tabindex="0" aria-expanded="false" data-i="${i}">
       <td class="pick"><input type="checkbox" data-id="${esc(r.id)}" aria-label="Compare ${esc(r.id)}"
         ${selected.has(r.id) ? "checked" : ""} ${!selected.has(r.id) && selected.size >= 3 ? "disabled" : ""}></td>
-      <td>
-        <a class="exp-id" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.id)}</a>
-        <span class="exp-name">${esc(r.acronym || shortTitle(r.title))}</span>
-        <span class="exp-full">${esc(shortTitle(r.title))}</span>
+      <td class="exp-cell">
+        ${thumb(r, 44)}
+        <span class="exp-text">
+          <a class="exp-id" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.id)}</a>
+          <span class="exp-name">${esc(r.acronym || shortTitle(r.title))}</span>
+          <span class="exp-full">${esc(shortTitle(r.title))}</span>
+        </span>
       </td>
       <td class="covers">${r.areas.map((a) => `<span class="c-${a}">${AREA_WORDS[a]}</span>`).join("")}</td>
       <td class="num ${r.tests_near ? "" : "near-zero"}">${r.tests_near} of ${r.tests_total}</td>
@@ -138,7 +192,7 @@ async function refreshRank() {
       </td>
     </tr>`).join("");
   $("show-all").hidden = d.results.length <= 8;
-  $("dl-near").href = `${API}/api/export?scope=near`;
+  $("dl-near").href = `${API}/api/export?scope=near&${hp()}`;
 }
 
 const o2Range = (r) => !r ? "not recorded"
@@ -165,12 +219,21 @@ function toggleRow(row) {
 $("rank-body").addEventListener("change", (e) => {
   const box = e.target.closest("input[data-id]");
   if (!box) return;
-  box.checked ? selected.add(box.dataset.id) : selected.delete(box.dataset.id);
+  setSelected(box.dataset.id, box.checked);
+});
+
+// Tick or untick an experiment for comparison from anywhere (table or map).
+function setSelected(id, on) {
+  if (on && selected.size >= 3 && !selected.has(id)) return false;
+  on ? selected.add(id) : selected.delete(id);
   document.querySelectorAll("#rank-body input[data-id]").forEach((b) => {
+    b.checked = selected.has(b.dataset.id);
     b.disabled = !b.checked && selected.size >= 3;
   });
   updateCompareButton();
-});
+  renderMapSelection();
+  return true;
+}
 
 function updateCompareButton() {
   const n = selected.size;
@@ -189,7 +252,7 @@ const range = (r, unit, d = 0) => {
 const list = (xs) => xs && xs.length ? `<ul>${xs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "None recorded";
 
 async function showCompare(scroll = true) {
-  const d = await api(`/api/compare?ids=${[...selected].join(",")}`);
+  const d = await api(`/api/compare?ids=${[...selected].join(",")}&${hp()}`);
   const inv = d.investigations;
   const rows = [
     ["Covers", (x) => x.areas.map((a) => AREA_WORDS[a]).join(", ")],
@@ -205,12 +268,13 @@ async function showCompare(scroll = true) {
     ["Held the same", (x) => list(x.fixed)],
     ["Test runs", (x) => `${x.test_rows}`],
     ["Runs near your habitat", (x) => `${x.tests_near}`],
-    ["Data", (x) => `<a href="${API}/api/export?scope=ids&ids=${esc(x.id)}">Download all runs (CSV)</a>`],
+    ["Data", (x) => `<a href="${API}/api/export?scope=ids&ids=${esc(x.id)}&${hp()}">Download all runs (CSV)</a>`],
   ];
   $("compare-table").innerHTML = `
-    <thead><tr><th></th>${inv.map((x) => `<th><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.id)}</a> ${esc(x.acronym || "")}<small>${esc(shortTitle(x.title))}</small></th>`).join("")}</tr></thead>
+    <thead><tr><th></th>${inv.map((x) => `<th>${thumb(x, 64)}<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.id)}</a> ${esc(x.acronym || "")}<small>${esc(shortTitle(x.title))}</small></th>`).join("")}</tr></thead>
     <tbody>${rows.map(([label, f]) => {
       const cells = inv.map(f);
+      if (label === "Held the same" && cells.every((c) => c === "None recorded")) return "";
       const same = inv.length > 1 && cells.every((c) => c === cells[0]) && !/Not (listed|recorded)|None|units unclear/.test(cells[0]);
       return `<tr class="${same ? "same" : ""}"><th scope="row">${label}</th>${cells.map((c) => `<td>${c}</td>`).join("")}</tr>`;
     }).join("")}</tbody>`;
@@ -255,6 +319,173 @@ function summarizeComparison(inv) {
   return out;
 }
 
+// ---------- connection map ----------
+// One row per set of hardware. Cards are ordered so linked experiments sit side by side;
+// ground studies sit in the row of the flight experiment they studied.
+const LANES = [
+  { fam: "acme",    ids: ["PSI-20", "PSI-10", "PSI-159", "PSI-21", "PSI-23", "PSI-22"], ground: [] },
+  { fam: "duct",    ids: ["PSI-106", "PSI-107", "PSI-26", "PSI-25"], ground: ["PSI-60", "PSI-62"] },
+  { fam: "saffire", ids: ["PSI-98", "PSI-99", "PSI-100"], ground: [] },
+  { fam: "mdca",    ids: ["PSI-39", "PSI-69", "PSI-68"], ground: ["PSI-117", "PSI-142"] },
+  { fam: "smoke",   ids: ["PSI-101", "PSI-102", "PSI-47"], ground: ["PSI-115"] },
+];
+const SHORT = { "PSI-60": "SPICE soot study", "PSI-62": "BASS flame model", "PSI-115": "SAME smoke model",
+  "PSI-117": "FLEX 3-D model", "PSI-142": "FLEX counterflow" };
+const ACR = { "PSI-10": "Flame Design", "PSI-20": "ACME BRE", "PSI-21": "CLD Flame", "PSI-22": "E-FIELD",
+  "PSI-23": "s-Flame", "PSI-159": "CFI-G", "PSI-47": "DAFT" };
+const LINK_WORDS = { series: "Flown again", instrument: "Instrument reused", emulates: "Imitates",
+  reanalysis: "Studied on the ground", related: "Related" };
+let mapData = null, mapPinned = null, mapHover = null;
+
+const nodeName = (n) => ACR[n.id] || n.acronym || SHORT[n.id] || n.id;
+const linkKey = (a, b) => [a, b].sort().join("|");
+
+async function refreshMap() {
+  mapData = await api(`/api/map?${hp()}`);
+  const byId = Object.fromEntries(mapData.nodes.map((n) => [n.id, n]));
+  const links = Object.fromEntries(mapData.links.map((l) => [linkKey(l.from, l.to), l]));
+  // A connector between two neighbouring cards, if they're linked.
+  const conn = (a, b) => {
+    const l = links[linkKey(a, b)];
+    if (!l) return '<span class="gap"></span>';
+    const dir = l.kind === "series" || l.kind === "instrument" ? (l.from === a ? "arrow-r" : "arrow-l") : "";
+    return `<span class="conn k-${l.kind} ${dir}" data-a="${a}" data-b="${b}" title="${esc(l.label)}"></span>`;
+  };
+  const card = (id, ground) => {
+    const n = byId[id];
+    if (!n) return "";
+    return `<button type="button" class="card ${ground ? "ground" : ""} ${n.tests_near ? "near" : ""}" data-id="${esc(id)}"
+      aria-label="${esc(nodeName(n))}, ${esc(id)}">${thumb(n, 30)}
+      <span class="n-text"><span class="n-name">${esc(nodeName(n))}</span>
+      <span class="n-meta">${ground ? "Ground study" : n.tests_near ? `<b>${n.tests_near} runs near</b>` : esc(id)}</span></span></button>`;
+  };
+  const row = (ids, ground) => ids.map((id, k) => (k ? conn(ids[k - 1], id) : "") + card(id, ground)).join("");
+  $("map-lanes").innerHTML = LANES.map((lane) => {
+    const f = mapData.families.find((x) => x.key === lane.fam) || {};
+    return `<div class="lane" data-fam="${lane.fam}">
+      <div><p class="lane-name">${esc(f.label || "")}</p><p class="lane-where">${esc(f.where || "")}</p></div>
+      <div class="lane-cards">
+        <div class="lane-row">${row(lane.ids)}</div>
+        ${lane.ground.length ? `<div class="lane-row ground-row"><span class="ground-tag">Studied on the ground</span>${row(lane.ground, true)}</div>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  renderMapSelection();
+  updateMap();
+}
+
+// Focus = the pinned experiment, or the one under the pointer.
+const mapFocus = () => mapPinned || mapHover;
+
+function updateMap() {
+  const id = mapFocus(), wrap = $("map-wrap");
+  wrap.classList.toggle("focused", !!id);
+  const mine = id ? mapData.links.filter((l) => l.from === id || l.to === id) : [];
+  const lit = new Set([id, ...mine.flatMap((l) => [l.from, l.to])]);
+  wrap.querySelectorAll(".card").forEach((c) => {
+    c.classList.toggle("lit", lit.has(c.dataset.id));
+    c.classList.toggle("pinned", c.dataset.id === mapPinned);
+  });
+  wrap.querySelectorAll(".conn").forEach((c) => c.classList.toggle("lit", !!id && (c.dataset.a === id || c.dataset.b === id)));
+  drawArcs(mine);
+  id ? showNode(id) : showSummary();
+}
+
+// Draw the links that aren't already shown as neighbour connectors.
+function drawArcs(mine) {
+  const wrap = $("map-wrap"), svg = $("map-links"), box = wrap.getBoundingClientRect();
+  svg.setAttribute("viewBox", `0 0 ${box.width} ${box.height}`);
+  const neighbours = new Set([...wrap.querySelectorAll(".conn")].map((c) => linkKey(c.dataset.a, c.dataset.b)));
+  const rect = (id) => {
+    const el = wrap.querySelector(`.card[data-id="${id}"]`);
+    if (!el || !el.offsetParent) return null;
+    const r = el.getBoundingClientRect();
+    return { l: r.left - box.left, r: r.right - box.left, t: r.top - box.top, b: r.bottom - box.top,
+             cx: r.left - box.left + r.width / 2, cy: r.top - box.top + r.height / 2 };
+  };
+  svg.innerHTML = mine.filter((l) => !neighbours.has(linkKey(l.from, l.to))).map((l) => {
+    const a = rect(l.from), b = rect(l.to);
+    if (!a || !b) return "";
+    let d;
+    if (Math.abs(a.cy - b.cy) < 4) {          // same row: an arc over the cards
+      const lift = Math.min(46, 18 + Math.abs(a.cx - b.cx) * 0.12);
+      d = `M${a.cx},${a.t} C${a.cx},${a.t - lift} ${b.cx},${b.t - lift} ${b.cx},${b.t}`;
+    } else {                                    // different rows: leave from the top/bottom edge
+      const down = a.cy < b.cy, y1 = down ? a.b : a.t, y2 = down ? b.t : b.b, mid = (y1 + y2) / 2;
+      d = `M${a.cx},${y1} C${a.cx},${mid} ${b.cx},${mid} ${b.cx},${y2}`;
+    }
+    return `<path class="arc k-${l.kind}" d="${d}"/>`;
+  }).join("");
+  svg.querySelectorAll(".arc").forEach((p) => p.style.setProperty("--len", p.getTotalLength()));
+}
+
+function renderMapSelection() {
+  document.querySelectorAll("#map-lanes .card").forEach((c) => c.classList.toggle("picked", selected.has(c.dataset.id)));
+  if (mapData) mapFocus() ? showNode(mapFocus()) : showSummary();
+}
+
+// Nothing selected: what matters for this habitat.
+function showSummary() {
+  const near = mapData.nodes.filter((n) => n.tests_near).sort((a, b) => b.tests_near - a.tests_near);
+  $("map-detail").innerHTML = `<div class="md-summary">
+    <h3>For this habitat</h3>
+    ${near.length ? `<p>${near.length} of 24 experiments have test runs near these conditions:</p>
+      <ul>${near.map((n) => `<li><button type="button" class="as-text" data-goto="${n.id}">${esc(nodeName(n))}</button>: ${n.tests_near} runs</li>`).join("")}</ul>`
+      : "<p>No experiment has test runs near these conditions.</p>"}
+    <p class="md-hint">Cards with a green edge have runs near your habitat. Hover any card to see how it connects; click to keep it selected.</p>
+  </div>`;
+}
+
+function showNode(id) {
+  const n = mapData.nodes.find((x) => x.id === id);
+  if (!n) return;
+  const fam = mapData.families.find((f) => f.key === n.family);
+  const byId = Object.fromEntries(mapData.nodes.map((x) => [x.id, x]));
+  const links = mapData.links.filter((l) => l.from === id || l.to === id);
+  const picked = selected.has(id), full = !picked && selected.size >= 3;
+  $("map-detail").innerHTML = `
+    <div class="md-head">${thumb(n, 64)}
+      <div><h3><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(nodeName(n))}</a></h3>
+        <p class="md-title">${esc(shortTitle(n.title))}</p>
+        <p class="md-meta">${esc(n.id)} · ${esc(fam ? fam.label : "")}</p></div></div>
+    ${n.badge ? `<p class="md-badge">${esc(n.badge)}</p>` : ""}
+    <p class="md-stat">${n.tests_total
+      ? `<b>${n.tests_near}</b> of ${n.tests_total} test runs near this habitat`
+      : "A ground study: no flight test runs of its own"}</p>
+    ${links.length ? `<ul class="md-links">${links.map((l) => {
+      const other = byId[l.from === id ? l.to : l.from];
+      return `<li><span class="lk k-${l.kind}"></span><span><b>${LINK_WORDS[l.kind]}.</b> ${esc(l.label)}.
+        <button type="button" data-goto="${esc(other.id)}">Go to ${esc(nodeName(other))}</button>
+        <small>Source: ${esc(l.source)}</small></span></li>`;
+    }).join("")}</ul>` : '<p class="md-hint">No recorded links to other experiments.</p>'}
+    <div class="md-actions">
+      <button type="button" class="btn" data-pick="${esc(id)}" ${full ? "disabled" : ""}>
+        ${picked ? "Remove from comparison" : full ? "Comparison is full (3)" : "Add to comparison"}</button>
+      ${selected.size >= 2 ? `<button type="button" class="btn-quiet as-link" data-open-compare>Compare ${selected.size}</button>` : ""}
+    </div>
+    ${mapPinned ? '<p class="md-hint">Selected. Click it again or press Esc to clear.</p>' : '<p class="md-hint">Click to keep this selected.</p>'}`;
+}
+
+// Hover previews; click pins. Keyboard: focus previews, Enter pins.
+const lanes = $("map-lanes");
+lanes.addEventListener("mouseover", (e) => { const c = e.target.closest(".card"); if (c && c.dataset.id !== mapHover) { mapHover = c.dataset.id; if (!mapPinned) updateMap(); } });
+lanes.addEventListener("mouseleave", () => { mapHover = null; if (!mapPinned) updateMap(); });
+lanes.addEventListener("focusin", (e) => { const c = e.target.closest(".card"); if (c) { mapHover = c.dataset.id; if (!mapPinned) updateMap(); } });
+lanes.addEventListener("click", (e) => {
+  const c = e.target.closest(".card");
+  if (!c) return;
+  mapPinned = mapPinned === c.dataset.id ? null : c.dataset.id;
+  updateMap();
+});
+$("map-detail").addEventListener("click", (e) => {
+  const go = e.target.closest("[data-goto]"), pick = e.target.closest("[data-pick]"), open = e.target.closest("[data-open-compare]");
+  if (go) { mapPinned = go.dataset.goto; updateMap(); }
+  if (pick) setSelected(pick.dataset.pick, !selected.has(pick.dataset.pick));
+  if (open) showCompare(true);
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && mapPinned) { mapPinned = null; updateMap(); } });
+new ResizeObserver(() => mapData && drawArcs(mapFocus() ? mapData.links.filter((l) => l.from === mapFocus() || l.to === mapFocus()) : [])).observe($("map-wrap"));
+
 // ---------- ask ----------
 async function ask(q) {
   document.querySelector(".suggest")?.remove();
@@ -262,7 +493,7 @@ async function ask(q) {
   const pending = addMsg("Reading the NASA data…", "bot");
   try {
     const d = await api("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: q }) });
+      body: JSON.stringify({ question: q, scenario: habitatKey, sensor: followLive }) });
     pending.innerHTML = renderMarkdown(d.answer);
   } catch {
     pending.textContent = "The server didn’t answer. Check it’s running, then ask again.";

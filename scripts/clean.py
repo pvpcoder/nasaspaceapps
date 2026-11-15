@@ -17,7 +17,7 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from profiles import PROFILES  # noqa: E402
+from profiles import PROFILES, FAMILIES, SHAPES, PHOTOS, BADGES, LINKS  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -329,7 +329,13 @@ def main():
             print(f"{inv['id']:8} {inv['acronym'][:22]:22} {len(rows):4}  "
                   f"{cols.get('o2')} / {cols.get('p')} / {cols.get('flow')}")
         varied, fixed = describe_variables(inv)
-        catalog.append({**inv, **tag, **PROFILES.get(inv["id"], {}), **summarize(inv_rows),
+        fam = next((f for f in FAMILIES if inv["id"] in f["ids"]), None)
+        map_info = {"family": fam["key"] if fam else "other",
+                    "shape": SHAPES.get(inv["id"], "model"),
+                    "photo_file": PHOTOS.get(inv["id"], ""),
+                    "badge": BADGES.get(inv["id"], ""),
+                    "links": [l for l in LINKS if inv["id"] in (l["from"], l["to"])]}
+        catalog.append({**inv, **tag, **PROFILES.get(inv["id"], {}), **summarize(inv_rows), **map_info,
                         "varied": varied, "fixed": fixed,
                         "test_rows": len({(r["table"], r["row"]) for r in inv_rows})})
 
@@ -338,6 +344,7 @@ def main():
         w.writeheader()
         w.writerows(all_rows)
     (DATA / "catalog.json").write_text(json.dumps(catalog, indent=2))
+    (DATA / "map.json").write_text(json.dumps({"families": FAMILIES, "links": LINKS}, indent=2))
     print(f"\n{len(all_rows)} test rows -> data/tests.csv")
     print(f"{len(catalog)} investigations -> data/catalog.json")
 
