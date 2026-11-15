@@ -87,9 +87,9 @@ Sensor-box extras (also optional):
 - `hatch_cm`: ultrasonic distance; under 8 cm counts as hatch closed
 - `suppress`: `true` once when the box's switch is pressed; starts 15 s of simulated CO₂ suppression
 
-The reply is `{"level": "green" | "yellow" | "red", "mode": "normal" | "suppressing", "vent": "open" | "closed", "alarm": true | false}`. Use it to drive the LEDs, buzzer and vent servo. With `alarm`, the buzzer beeps while the level is Warning (red), and the switch silences it. A temperature rise of 6 °C or more above the room's normal counts as Warning.
+The reply is `{"level": "green" | "yellow" | "red", "mode": "normal" | "suppressing", "vent": "open" | "closed", "alarm": true | false}`. Use it to drive the LEDs, buzzer and vent servo. With `alarm`, the buzzer beeps while the level is Warning (red), and the switch silences it. A temperature rise of 4 °C or more above the room's normal counts as Warning.
 
-The vent closes during suppression, when smoke reaches 60, or when heat is detected: the temperature rises above the room's learned normal by +6 °C at 21% O₂, down to +3 °C at 40% O₂ (or reaches 45 °C). It is a rate-of-rise trigger scaled so a warm hand can set it off in the demo. High oxygen alone doesn't close it, since in microgravity ventilation is what clears the crew's CO₂. `/api/state` includes the same box status under `box` while the box is live.
+The vent closes during suppression, when smoke reaches 60, or when heat is detected: the temperature rises above the room's learned normal by +4 °C at 21% O₂, down to +2 °C at 40% O₂ (or reaches 45 °C). It is a rate-of-rise trigger scaled so a warm hand can set it off in the demo. High oxygen alone doesn't close it, since in microgravity ventilation is what clears the crew's CO₂. `/api/state` includes the same box status under `box` while the box is live.
 
 Firmware: `esp32/flamewatch_node/`. Copy `secrets.example.h` to `secrets.h` and fill in your WiFi first.
 

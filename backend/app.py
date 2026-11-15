@@ -84,13 +84,13 @@ HATCH_CLOSED_CM = 8      # ultrasonic: anything closer than this = hatch closed
 
 # Vent trigger = rate-of-rise heat detection (like many real fire detectors):
 # the vent closes when temperature climbs above the room's learned normal.
-# Oxygen makes it more sensitive: +6 °C above normal at 21% O2, down to +3 °C at 40%.
+# Oxygen makes it more sensitive: +4 °C above normal at 21% O2, down to +2 °C at 40%.
 # Scaled so a warm hand on the probe can trigger it in the demo.
-RISE_AT_21 = 6.0
-RISE_AT_40 = 3.0
+RISE_AT_21 = 4.0
+RISE_AT_40 = 2.0
 RISE_HYSTERESIS = 1.0    # reopen only once it has cooled 1 °C below the trigger
 HEAT_ABSOLUTE_C = 45.0   # always counts as heat, whatever the baseline
-CRITICAL_RISE = 6.0      # a rise this big above normal = Warning (alarm sounds)
+CRITICAL_RISE = 4.0      # a rise this big above normal = Warning (alarm sounds)
 SMOKE_VENT = 60          # smoke reading that counts as fire evidence (closes the vent)
 HEAT = {"baseline": None, "detected": False}
 
@@ -147,7 +147,7 @@ def habitat(scenario=None, o2_pct=None, pressure_psi=None, sensor=False):
                   if LIVE[k] is not None})
         h.update(source="sensor", label="Sensor box (live)")
         if LIVE["temp_c"] is not None and HEAT["baseline"] is not None:
-            h["heat_rise"] = round(LIVE["temp_c"] - HEAT["baseline"], 1)
+            h["heat_rise"] = LIVE["temp_c"] - HEAT["baseline"]   # unrounded: same value the vent uses
     return h
 
 
@@ -172,7 +172,7 @@ RISK_FORMULA = {
     "flame": "25 if the flame sensor detects a flame, otherwise 0",
     "levels": ("Nominal under 30 · Caution 30–59 · Warning 60 or more. Overrides: any flame means "
                "Warning; smoke of 85 or more means Warning; smoke of 60 or more means at least Caution; "
-               "with the sensor box, a temperature rise of 6 °C or more above the room's normal means Warning"),
+               "with the sensor box, a temperature rise of 4 °C or more above the room's normal means Warning"),
     "why_concentration": ("The oxygen score uses oxygen concentration (%), not partial pressure. "
                           "A Moon base at 34% O₂ and 8.2 psi has a lower oxygen partial pressure "
                           "than sea level, yet NASA expects materials to burn more easily there: "

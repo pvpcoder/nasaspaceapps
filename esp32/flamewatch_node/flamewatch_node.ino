@@ -68,11 +68,13 @@ const unsigned long LOCAL_SUPPRESS_MS  = 15000;  // offline suppression duration
 const unsigned long TEMP_CONVERSION_MS = 800;
 const bool  BUZZER_PASSIVE = false;    // false = active buzzer (beeps on its own when powered)
                                        // true  = passive buzzer (needs a tone)
+const bool  BUZZER_ACTIVE_LOW = true;  // true = buzzer module sounds when the pin is LOW
+                                       // (if it's silent at critical, set this to false)
 const int   BUZZER_TONE_HZ = 2700;
-const float CRITICAL_RISE  = 6.0;      // degrees above normal = critical (same as backend)
+const float CRITICAL_RISE  = 4.0;      // degrees above normal = critical (same as backend)
 // Vent heat trigger (same as backend): rise above the room's learned normal.
-const float RISE_AT_21 = 6.0;      // degrees C above normal at 21% O2
-const float RISE_AT_40 = 3.0;      // degrees C above normal at 40% O2
+const float RISE_AT_21 = 4.0;      // degrees C above normal at 21% O2
+const float RISE_AT_40 = 2.0;      // degrees C above normal at 40% O2
 const float HEAT_ABSOLUTE_C = 45.0;
 
 // ---------- Globals ----------
@@ -138,7 +140,7 @@ float readSmoke() {                 // smoke knob -> 0-100
 
 void setBuzzer(bool on) {
   if (BUZZER_PASSIVE) ledcWrite(PIN_BUZZER, on ? 128 : 0);   // 50% duty square wave
-  else                digitalWrite(PIN_BUZZER, on ? HIGH : LOW);
+  else                digitalWrite(PIN_BUZZER, (on != BUZZER_ACTIVE_LOW) ? HIGH : LOW);
 }
 
 float readDistanceCm() {
@@ -334,7 +336,7 @@ void setup() {
   pinMode(PIN_TRIG, OUTPUT);  pinMode(PIN_ECHO, INPUT);
   pinMode(PIN_SWITCH, INPUT_PULLUP);
   if (BUZZER_PASSIVE) ledcAttach(PIN_BUZZER, BUZZER_TONE_HZ, 8);
-  else                pinMode(PIN_BUZZER, OUTPUT);
+  else { setBuzzer(false); pinMode(PIN_BUZZER, OUTPUT); }   // set "off" level before driving the pin
   setBuzzer(false);
   analogReadResolution(12);
 
