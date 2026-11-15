@@ -82,6 +82,42 @@ LIVE_TIMEOUT_S = 10
 SUPPRESS_SECONDS = 15    # how long one press of the box's switch "floods" the module
 HATCH_CLOSED_CM = 8      # ultrasonic: anything closer than this = hatch closed
 
+# Vent trigger = rate-of-rise heat detection (like many real fire detectors):
+# the vent closes when temperature climbs above the room's learned normal.
+# Oxygen makes it more sensitive: +6 °C above normal at 21% O2, down to +3 °C at 40%.
+# Scaled so a warm hand on the probe can trigger it in the demo.
+RISE_AT_21 = 6.0
+RISE_AT_40 = 3.0
+RISE_HYSTERESIS = 1.0    # reopen only once it has cooled 1 °C below the trigger
+HEAT_ABSOLUTE_C = 45.0   # always counts as heat, whatever the baseline
+CRITICAL_RISE = 6.0      # a rise this big above normal = Warning (alarm sounds)
+SMOKE_VENT = 60          # smoke reading that counts as fire evidence (closes the vent)
+HEAT = {"baseline": None, "detected": False}
+
+
+def rise_trigger(o2):
+    frac = max(0.0, min(1.0, (o2 - 21) / 19))
+    return RISE_AT_21 + (RISE_AT_40 - RISE_AT_21) * frac
+
+
+def update_heat(temp, o2):
+    """Learn the room's normal temperature and decide if a heat rise is under way."""
+    if temp is None:
+        return
+    base = HEAT["baseline"]
+    if base is None:
+        HEAT["baseline"] = temp
+        return
+    rise = temp - base
+    # Follow the room quickly while things are calm; nearly freeze while heating,
+    # so holding the probe doesn't teach the box that "hot" is normal.
+    HEAT["baseline"] += (temp - base) * (1 / 30 if rise < 1.5 else 1 / 1200)
+    trigger = rise_trigger(o2 or 21)
+    if HEAT["detected"]:
+        HEAT["detected"] = rise >= trigger - RISE_HYSTERESIS or temp >= HEAT_ABSOLUTE_C
+    else:
+        HEAT["detected"] = rise >= trigger or temp >= HEAT_ABSOLUTE_C
+
 
 def live_fresh():
     return time.time() - LIVE["updated"] < LIVE_TIMEOUT_S
@@ -110,6 +146,8 @@ def habitat(scenario=None, o2_pct=None, pressure_psi=None, sensor=False):
         h.update({k: LIVE[k] for k in ("o2_pct", "pressure_psi", "smoke", "temp_c", "dust", "flame")
                   if LIVE[k] is not None})
         h.update(source="sensor", label="Sensor box (live)")
+        if LIVE["temp_c"] is not None and HEAT["baseline"] is not None:
+            h["heat_rise"] = round(LIVE["temp_c"] - HEAT["baseline"], 1)
     return h
 
 
@@ -133,7 +171,8 @@ RISK_FORMULA = {
     "heat": "0 at 30 °C or below, rising to 15 at 60 °C: 15 × (°C − 30) ÷ 30",
     "flame": "25 if the flame sensor detects a flame, otherwise 0",
     "levels": ("Nominal under 30 · Caution 30–59 · Warning 60 or more. Overrides: any flame means "
-               "Warning; smoke of 85 or more means Warning; smoke of 60 or more means at least Caution"),
+               "Warning; smoke of 85 or more means Warning; smoke of 60 or more means at least Caution; "
+               "with the sensor box, a temperature rise of 6 °C or more above the room's normal means Warning"),
     "why_concentration": ("The oxygen score uses oxygen concentration (%), not partial pressure. "
                           "A Moon base at 34% O₂ and 8.2 psi has a lower oxygen partial pressure "
                           "than sea level, yet NASA expects materials to burn more easily there: "
@@ -151,7 +190,8 @@ def risk(state):
     flame = 25.0 if state.get("flame") else 0.0
     score = min(100.0, atmo + smoke + heat + flame)
     smoke_reading = state.get("smoke") or 0
-    if score >= 60 or state.get("flame") or smoke_reading >= 85:
+    heat_rise = state.get("heat_rise") or 0      # sensor box only: °C above the room's normal
+    if score >= 60 or state.get("flame") or smoke_reading >= 85 or heat_rise >= CRITICAL_RISE:
         level = "red"
     elif score >= 30 or smoke_reading >= 60:
         level = "yellow"
@@ -175,20 +215,33 @@ def post_reading(r: Reading):
     LIVE["updated"] = time.time()
     if suppress:
         LIVE["suppress_until"] = time.time() + SUPPRESS_SECONDS
+    update_heat(data.get("temp_c"), LIVE["o2_pct"])
     # Small reply so the ESP32 can set its LEDs, buzzer and vent servo from it.
     box = box_status()
-    return {"level": box["level"], "mode": box["mode"], "vent": box["vent"]}
+    return {"level": box["level"], "mode": box["mode"], "vent": box["vent"],
+            "alarm": box["alarm"]}
 
 
 def box_status():
     """Module status from the sensor box, judged on the box's own live readings.
-    In microgravity there is no buoyancy, so forced airflow feeds a flame: the box
-    closes its vent on a red alarm or while suppressing."""
+    The vent closes when heat or smoke is detected (evidence of a fire) or while suppressing,
+    not for high oxygen alone: in microgravity, ventilation is what clears the crew's
+    exhaled CO2, so shutting it with no fire would hurt them. Once a fire starts,
+    forced airflow is what feeds it (no buoyancy), so then it closes."""
     level = risk(habitat(sensor=True))["level"]
     suppressing = time.time() < LIVE["suppress_until"]
     hatch = LIVE["hatch_cm"]
+    temp, base = LIVE["temp_c"], HEAT["baseline"]
+    rise = None if temp is None or base is None else round(temp - base, 1)
+    heat = HEAT["detected"]
+    smoky = (LIVE["smoke"] or 0) >= SMOKE_VENT
     return {"level": level, "mode": "suppressing" if suppressing else "normal",
-            "vent": "closed" if suppressing or level == "red" else "open",
+            "vent": "closed" if suppressing or heat or smoky else "open",
+            "smoke_detected": smoky,
+            "alarm": level == "red" and not suppressing,
+            "heat_detected": heat, "temp_rise": rise,
+            "rise_trigger": round(rise_trigger(LIVE["o2_pct"] or 21), 1),
+            "baseline_c": None if base is None else round(base, 1),
             "crew": LIVE["crew"], "hatch_cm": hatch,
             "hatch_closed": None if hatch is None else hatch < HATCH_CLOSED_CM}
 

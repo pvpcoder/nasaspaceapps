@@ -82,11 +82,14 @@ Sensor-box extras (also optional):
 {"crew": true, "hatch_cm": 5.2, "suppress": false}
 ```
 
+- `smoke`: on this box, a second knob (0–100) standing in for a smoke detector
 - `crew`: PIR motion sensor, someone in the module
 - `hatch_cm`: ultrasonic distance; under 8 cm counts as hatch closed
 - `suppress`: `true` once when the box's switch is pressed; starts 15 s of simulated CO₂ suppression
 
-The reply is `{"level": "green" | "yellow" | "red", "mode": "normal" | "suppressing", "vent": "open" | "closed"}`. Use it to drive the LEDs, buzzer and vent servo. The vent closes on a red alarm and during suppression. `/api/state` includes the same box status under `box` while the box is live.
+The reply is `{"level": "green" | "yellow" | "red", "mode": "normal" | "suppressing", "vent": "open" | "closed", "alarm": true | false}`. Use it to drive the LEDs, buzzer and vent servo. With `alarm`, the buzzer beeps while the level is Warning (red), and the switch silences it. A temperature rise of 6 °C or more above the room's normal counts as Warning.
+
+The vent closes during suppression, when smoke reaches 60, or when heat is detected: the temperature rises above the room's learned normal by +6 °C at 21% O₂, down to +3 °C at 40% O₂ (or reaches 45 °C). It is a rate-of-rise trigger scaled so a warm hand can set it off in the demo. High oxygen alone doesn't close it, since in microgravity ventilation is what clears the crew's CO₂. `/api/state` includes the same box status under `box` while the box is live.
 
 Firmware: `esp32/flamewatch_node/`. Copy `secrets.example.h` to `secrets.h` and fill in your WiFi first.
 
@@ -111,6 +114,7 @@ curl -X POST localhost:8000/api/reading -H "Content-Type: application/json" \
 ## Honest caveats (say these in the demo)
 
 - The oxygen value from the box is simulated with a knob.
+- The vent's heat trigger is scaled down (a few °C of rise) so a hand can trigger it; a real system would use smoke detection.
 - The risk score is a simple, transparent heuristic, not a validated fire model.
 - Tests without a pressure column (BASS, Saffire) are assumed to be at ~1 atm cabin air.
 - Inverse-flame O₂ (CFI-G, Flame Design) is burner gas, not cabin air, so it's excluded from matching.

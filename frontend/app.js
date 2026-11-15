@@ -100,12 +100,22 @@ async function refreshState() {
     $("r-crew").textContent = box.crew == null ? "–" : box.crew ? "Yes" : "No";
     $("r-hatch").textContent = box.hatch_closed == null ? "–" : box.hatch_closed ? "Closed" : "Open";
     $("r-vent").textContent = box.vent === "closed" ? "Closed" : "Open";
+    const rise = box.temp_rise == null ? ""
+      : ` Temperature is ${box.temp_rise >= 0 ? "+" : ""}${box.temp_rise} °C from normal; the vent closes at +${box.rise_trigger} °C at this oxygen level.`;
     if (box.mode === "suppressing") {
       alert = "Suppression active: CO₂ flood simulated, vent closed. FLEX and FLEX-2 studied putting out flames by diluting the air with CO₂ and helium.";
-    } else if (box.level === "red") {
-      alert = box.crew ? "Crew detected in the module: evacuate, then close the hatch."
-        : box.hatch_closed ? "Module isolated: ready to suppress (press the switch on the box)."
-        : "Module empty: close the hatch, then suppress.";
+    } else if (box.smoke_detected && !box.heat_detected) {
+      alert = (box.alarm ? "ALARM: " : "") + "Smoke detected, vent closed so airflow doesn't feed a fire or spread smoke. "
+        + (box.crew ? "Crew detected in the module: evacuate, then close the hatch." : "Close the hatch, then suppress.");
+    } else if (box.heat_detected) {
+      alert = (box.alarm ? "ALARM: " : "") + "Heat rise detected, vent closed to stop feeding the fire (no buoyancy, so airflow supplies the oxygen). "
+        + (box.crew ? "Crew detected in the module: evacuate, then close the hatch."
+          : box.hatch_closed ? "Module isolated: ready to suppress (press the switch on the box)."
+          : "Module empty: close the hatch, then suppress.");
+    } else if (box.alarm) {
+      alert = "ALARM: fire risk is at Warning level. Check smoke and oxygen, and get ready to suppress." + rise;
+    } else if (box.level !== "green" && rise) {
+      alert = "Oxygen-rich air: a fire would spread faster, so heat detection is more sensitive." + rise;
     }
   }
   $("box-alert").textContent = alert;

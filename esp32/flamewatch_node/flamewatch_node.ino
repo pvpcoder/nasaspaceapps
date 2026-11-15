@@ -3,6 +3,9 @@
   ------------------------------------------------
   Sends readings to the FlameWatch backend (POST /api/reading) once a second and
   drives the traffic light + vent servo from the reply {"level","mode","vent"}.
+  The vent closes when heat (temperature rising above the room's normal) or smoke
+  (60+) is detected, or during suppression - not for high oxygen alone.
+  The buzzer beeps while the level is critical (red); the switch silences it.
 
   Board:   Tools > Board > ESP32 Wrover Module   (ESP32 Arduino core 3.x)
   Libs:    Library Manager > install "OneWire" and "DallasTemperature"
@@ -19,6 +22,9 @@
     PIR            OUT        -> GPIO19   (VCC 5V, GND)
     Ultrasonic     TRIG -> GPIO5, ECHO -> 1k -> GPIO18 (2k from GPIO18 to GND)
     Switch         GPIO4 <-> GND
+    Smoke knob     middle pin -> GPIO33   (outer pins: 3.3V, GND)
+                   NOT GPIO13: pins 0,2,4,12-15,25-27 can't read analog while WiFi is on
+    Buzzer         + -> GPIO15, - -> GND  (set BUZZER_PASSIVE below to match yours)
 
   Any part that is not plugged in is simply reported as "null" -
   the rest keeps working, so you can add parts one at a time.
@@ -47,6 +53,8 @@ const int PIN_PIR    = 19;
 const int PIN_TRIG   = 5;
 const int PIN_ECHO   = 18;
 const int PIN_SWITCH = 4;
+const int PIN_SMOKE  = 33;   // ADC1 pin - works with WiFi on
+const int PIN_BUZZER = 15;
 
 // ---------- Tuning ----------
 const int   SERVO_OPEN_US    = 1500;   // vent open position  (adjust to taste)
@@ -58,6 +66,14 @@ const unsigned long SEND_INTERVAL_MS   = 1000;
 const unsigned long SERVER_FRESH_MS    = 5000;   // trust server answer for this long
 const unsigned long LOCAL_SUPPRESS_MS  = 15000;  // offline suppression duration
 const unsigned long TEMP_CONVERSION_MS = 800;
+const bool  BUZZER_PASSIVE = false;    // false = active buzzer (beeps on its own when powered)
+                                       // true  = passive buzzer (needs a tone)
+const int   BUZZER_TONE_HZ = 2700;
+const float CRITICAL_RISE  = 6.0;      // degrees above normal = critical (same as backend)
+// Vent heat trigger (same as backend): rise above the room's learned normal.
+const float RISE_AT_21 = 6.0;      // degrees C above normal at 21% O2
+const float RISE_AT_40 = 3.0;      // degrees C above normal at 40% O2
+const float HEAT_ABSOLUTE_C = 45.0;
 
 // ---------- Globals ----------
 OneWire oneWire(PIN_TEMP);
@@ -66,6 +82,7 @@ WiFiClientSecure tlsClient;
 HTTPClient http;
 
 float o2Percent  = O2_MIN;
+float smokeLevel = 0;                // 0-100 from the smoke knob
 float tempC      = NAN;
 float distanceCm = -1;
 bool  crewPresent = false;
@@ -74,12 +91,16 @@ bool  suppressPending = false;       // switch pressed, not yet told the server
 String serverRisk = "green";
 String serverMode = "normal";
 bool   serverVentClosed = false;
+bool   serverAlarm = false;
 unsigned long lastServerOk = 0;
 
 String risk = "green";               // what we actually show
 String mode = "normal";
 bool   ventClosed = false;
+bool   alarmOn = false;
 unsigned long localSuppressUntil = 0;
+float tempBaseline = NAN;            // learned "normal" room temperature
+bool  localHeat = false;
 
 unsigned long lastSend = 0;
 unsigned long lastWifiRetry = 0;
@@ -109,6 +130,17 @@ float readO2() {
   return O2_MIN + (raw / 4095.0) * (O2_MAX - O2_MIN);
 }
 
+float readSmoke() {                 // smoke knob -> 0-100
+  long sum = 0;
+  for (int i = 0; i < 8; i++) sum += analogRead(PIN_SMOKE);
+  return (sum / 8.0) / 4095.0 * 100.0;
+}
+
+void setBuzzer(bool on) {
+  if (BUZZER_PASSIVE) ledcWrite(PIN_BUZZER, on ? 128 : 0);   // 50% duty square wave
+  else                digitalWrite(PIN_BUZZER, on ? HIGH : LOW);
+}
+
 float readDistanceCm() {
   digitalWrite(PIN_TRIG, LOW);  delayMicroseconds(2);
   digitalWrite(PIN_TRIG, HIGH); delayMicroseconds(10);
@@ -116,6 +148,19 @@ float readDistanceCm() {
   unsigned long dur = pulseIn(PIN_ECHO, HIGH, 25000UL);  // ~4 m max
   if (dur == 0) return -1;                               // nothing / not connected
   return dur * 0.0343f / 2.0f;
+}
+
+// Offline copy of the backend's heat rule: learn the room's normal temperature
+// and flag heat when it rises past an oxygen-dependent trigger.
+void updateLocalHeat() {
+  if (isnan(tempC)) return;
+  if (isnan(tempBaseline)) { tempBaseline = tempC; return; }
+  float rise = tempC - tempBaseline;
+  tempBaseline += (tempC - tempBaseline) * (rise < 1.5f ? 1.0f / 30.0f : 1.0f / 1200.0f);
+  float frac = constrain((o2Percent - 21.0f) / 19.0f, 0.0f, 1.0f);
+  float trigger = RISE_AT_21 + (RISE_AT_40 - RISE_AT_21) * frac;
+  if (localHeat) localHeat = rise >= trigger - 1.0f || tempC >= HEAT_ABSOLUTE_C;
+  else           localHeat = rise >= trigger || tempC >= HEAT_ABSOLUTE_C;
 }
 
 void updateTemp() {                  // non-blocking DS18B20 read
@@ -128,6 +173,7 @@ void updateTemp() {                  // non-blocking DS18B20 read
     float t = tempSensor.getTempCByIndex(0);
     tempC = (t == DEVICE_DISCONNECTED_C || t < -50) ? NAN : t;
     tempRequested = false;
+    updateLocalHeat();
   }
 }
 
@@ -149,9 +195,11 @@ void updateSwitch() {                // debounced, fires once per press
 String localRisk() {
   float atmo = constrain((o2Percent - 21.0f) / 19.0f * 60.0f, 0.0f, 60.0f);
   float heat = isnan(tempC) ? 0 : constrain((tempC - 30.0f) / 30.0f * 15.0f, 0.0f, 15.0f);
-  float score = atmo + heat;
-  if (score >= 60) return "red";
-  if (score >= 30) return "yellow";
+  float smoke = min(25.0f, smokeLevel / 100.0f * 25.0f);
+  float score = atmo + smoke + heat;
+  float rise = (isnan(tempC) || isnan(tempBaseline)) ? 0 : tempC - tempBaseline;
+  if (score >= 60 || smokeLevel >= 85 || rise >= CRITICAL_RISE) return "red";
+  if (score >= 30 || smokeLevel >= 60) return "yellow";
   return "green";
 }
 
@@ -215,6 +263,7 @@ void startOta() {
 String buildJson() {
   String b = "{";
   b += "\"o2_pct\":";    b += String(o2Percent, 1);
+  b += ",\"smoke\":";    b += String(smokeLevel, 0);
   b += ",\"temp_c\":";   b += isnan(tempC) ? String("null") : String(tempC, 1);
   b += ",\"hatch_cm\":"; b += (distanceCm < 0) ? String("null") : String(distanceCm, 1);
   b += ",\"crew\":";     b += crewPresent ? "true" : "false";
@@ -236,6 +285,7 @@ void sendTelemetry() {
     String m = jsonValue(resp, "mode");
     if (m.length()) serverMode = m;
     serverVentClosed = (jsonValue(resp, "vent") == "closed");
+    serverAlarm = (jsonValue(resp, "alarm") == "true");
     lastServerOk = millis();
     suppressPending = false;         // server got the button press
     Serial.printf("[http] sent %s -> %s\n", body.c_str(), resp.c_str());
@@ -251,12 +301,13 @@ void applyOutputs() {
   bool serverFresh = lastServerOk && (now - lastServerOk < SERVER_FRESH_MS);
 
   if (serverFresh) {
-    risk = serverRisk; mode = serverMode; ventClosed = serverVentClosed;
+    risk = serverRisk; mode = serverMode; ventClosed = serverVentClosed; alarmOn = serverAlarm;
   } else {                                   // offline fallback
     bool suppressing = now < localSuppressUntil;
     risk = suppressing ? "yellow" : localRisk();
     mode = suppressing ? "suppressing" : "normal";
-    ventClosed = suppressing || risk == "red";
+    ventClosed = suppressing || localHeat || smokeLevel >= 60;
+    alarmOn = risk == "red" && !suppressing;
   }
 
   bool blinkFast = (now / 150) % 2;          // red alarm
@@ -267,6 +318,9 @@ void applyOutputs() {
   else                        setLeds(true, false, false);
 
   setServoUs(ventClosed ? SERVO_CLOSED_US : SERVO_OPEN_US);
+
+  // Alarm: beep 0.25 s on / 0.25 s off while critical. The switch silences it.
+  setBuzzer(alarmOn && (now / 250) % 2 == 0);
 }
 
 // ================= Setup / loop =================
@@ -279,6 +333,9 @@ void setup() {
   pinMode(PIN_PIR, INPUT);
   pinMode(PIN_TRIG, OUTPUT);  pinMode(PIN_ECHO, INPUT);
   pinMode(PIN_SWITCH, INPUT_PULLUP);
+  if (BUZZER_PASSIVE) ledcAttach(PIN_BUZZER, BUZZER_TONE_HZ, 8);
+  else                pinMode(PIN_BUZZER, OUTPUT);
+  setBuzzer(false);
   analogReadResolution(12);
 
   ledcAttach(PIN_SERVO, 50, 14);
@@ -293,6 +350,7 @@ void setup() {
   setLeds(false, true, false); delay(250);
   setLeds(false, false, true); delay(250);
   setLeds(false, false, false);
+  setBuzzer(true); delay(80); setBuzzer(false);      // startup chirp
 
   tlsClient.setInsecure();       // fine for a hackathon demo
   http.setReuse(true);
@@ -310,6 +368,7 @@ void loop() {
 
   // Read inputs
   o2Percent   = readO2();
+  smokeLevel  = readSmoke();
   crewPresent = digitalRead(PIN_PIR) == HIGH;
   updateTemp();
   updateSwitch();
