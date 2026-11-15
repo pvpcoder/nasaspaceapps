@@ -23,10 +23,12 @@ import io
 import json
 import os
 import re
+import threading
 import time
+from collections import deque
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -578,31 +580,119 @@ How to answer:
 - Under 180 words. Markdown: **bold** for the key point, "- " for bullets. No headings."""
 
 
+# ---------- AI usage limits ----------
+# Stops one visitor (or a script) from spending the API budget. Counts live in memory,
+# so they reset when the server restarts. Set a spend limit in the Anthropic console
+# as well: that's the hard cap on what you can be billed.
+ASK_PER_MINUTE = int(os.environ.get("ASK_PER_MINUTE", 5))        # per visitor
+ASK_PER_DAY = int(os.environ.get("ASK_PER_DAY", 30))             # per visitor
+ASK_GLOBAL_PER_DAY = int(os.environ.get("ASK_GLOBAL_PER_DAY", 150))  # whole site
+ASK_MAX_CHARS = int(os.environ.get("ASK_MAX_CHARS", 500))
+ASK_CACHE_SECONDS = 3600
+
+_ask_lock = threading.Lock()
+_ask_by_client: dict[str, deque] = {}
+_ask_all: deque = deque()
+_answer_cache: dict[tuple, tuple[float, dict]] = {}
+
+
+def client_id(request: Request) -> str:
+    """The visitor's IP. Behind Render's proxy the real address is the last entry the
+    proxy appended to X-Forwarded-For (earlier entries can be faked by the client)."""
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[-1].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _too_many(message: str, retry_after: int):
+    raise HTTPException(429, detail=message, headers={"Retry-After": str(max(1, retry_after))})
+
+
+def check_ask_limits(who: str):
+    now = time.time()
+    with _ask_lock:
+        mine = _ask_by_client.setdefault(who, deque())
+        while mine and now - mine[0] > 86400:
+            mine.popleft()
+        while _ask_all and now - _ask_all[0] > 86400:
+            _ask_all.popleft()
+        last_minute = sum(1 for t in mine if now - t < 60)
+        if last_minute >= ASK_PER_MINUTE:
+            oldest = min(t for t in mine if now - t < 60)
+            _too_many(f"That's {ASK_PER_MINUTE} questions in a minute. Try again in a few seconds.",
+                      int(60 - (now - oldest)) + 1)
+        if len(mine) >= ASK_PER_DAY:
+            _too_many(f"You've reached today's limit of {ASK_PER_DAY} questions. Try again tomorrow.",
+                      int(86400 - (now - mine[0])) + 1)
+        if len(_ask_all) >= ASK_GLOBAL_PER_DAY:
+            _too_many("The assistant has reached today's question limit for everyone. Try again tomorrow.",
+                      int(86400 - (now - _ask_all[0])) + 1)
+        mine.append(now)
+        _ask_all.append(now)
+
+
+def cache_key(q, h):
+    question = re.sub(r"\s+", " ", q.question.strip().lower())
+    return (question, round(h["o2_pct"], 1), round(h["pressure_psi"], 1),
+            h["source"], round(h.get("smoke") or 0, -1), bool(h.get("flame")))
+
+
 @app.post("/api/ask")
-def ask(q: Question):
+def ask(q: Question, request: Request):
+    question = q.question.strip()
+    if not question:
+        raise HTTPException(400, "Type a question first.")
+    if len(question) > ASK_MAX_CHARS:
+        raise HTTPException(400, f"Please keep questions under {ASK_MAX_CHARS} characters.")
     h = habitat(q.scenario, q.o2_pct, q.pressure_psi, q.sensor)
+
+    # The same question about the same habitat: reuse the answer, free.
+    key_c = cache_key(q, h)
+    hit = _answer_cache.get(key_c)
+    if hit and time.time() - hit[0] < ASK_CACHE_SECONDS:
+        return {**hit[1], "cached": True}
+
     st = state_payload(h)
-    context, used = build_context(q.question, h)
-    prompt = (f"Current habitat: {st['label']}, {st['o2_pct']}% O2, "
-              f"{st['pressure_psi']} psi, smoke {st['smoke']}/100, temp {st['temp_c']} C, "
-              f"fire risk {st['risk']['score']}/100 ({st['risk']['level']}).\n\n"
-              f"{context}\n\nQuestion: {q.question}")
+    context, used = build_context(question, h)
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         return {"answer": "AI is not connected yet (set ANTHROPIC_API_KEY). Most relevant "
                           "experiments right now: " + ", ".join(used[:5]), "sources": used}
+
+    check_ask_limits(client_id(request))   # only real AI calls count
+    prompt = (f"Current habitat: {st['label']}, {st['o2_pct']}% O2, "
+              f"{st['pressure_psi']} psi, smoke {st['smoke']}/100, temp {st['temp_c']} C, "
+              f"fire risk {st['risk']['score']}/100 ({st['risk']['level']}).\n\n"
+              f"{context}\n\nQuestion: {question}")
     import anthropic
-    client = anthropic.Anthropic(api_key=key)
-    msg = client.messages.create(
-        model=os.environ.get("FLAMEWATCH_MODEL", "claude-sonnet-5-5"),
-        max_tokens=2000, system=SYSTEM,
-        messages=[{"role": "user", "content": prompt}])
+    client = anthropic.Anthropic(api_key=key, max_retries=1)
+    try:
+        msg = client.messages.create(
+            model=os.environ.get("FLAMEWATCH_MODEL", "claude-sonnet-5-5"),
+            max_tokens=2000, system=SYSTEM,
+            messages=[{"role": "user", "content": prompt}])
+    except anthropic.APIStatusError as e:
+        text = str(getattr(e, "message", "")) + str(getattr(e, "body", ""))
+        if "usage limit" in text.lower() or "spend_limit" in text.lower():
+            raise HTTPException(503, "The assistant has reached its usage limit. The rest of the dashboard still works.")
+        if e.status_code == 429:
+            raise HTTPException(503, "The assistant is busy right now. Try again in a minute.", headers={"Retry-After": "60"})
+        raise HTTPException(502, "The assistant didn't respond. Try again.")
+    except anthropic.APIConnectionError:
+        raise HTTPException(502, "Couldn't reach the AI service. Check the internet connection and try again.")
+
     # The reply can contain thinking blocks before the answer; keep only the text.
     answer = "\n".join(b.text for b in msg.content if getattr(b, "type", "") == "text").strip()
     answer = re.sub(r"\s*\((?:the )?source text (?:is|was) truncated\)", "", answer, flags=re.I)
     if not answer:
-        answer = "The AI didn't return an answer. Try asking again."
-    return {"answer": answer, "sources": used}
+        return {"answer": "The AI didn't return an answer. Try asking again.", "sources": used}
+    result = {"answer": answer, "sources": used}
+    _answer_cache[key_c] = (time.time(), result)
+    if len(_answer_cache) > 500:   # keep memory bounded
+        for k in sorted(_answer_cache, key=lambda k: _answer_cache[k][0])[:100]:
+            _answer_cache.pop(k, None)
+    return result
 
 
 # ---------- frontend ----------

@@ -49,6 +49,21 @@ The Render URL also serves the full dashboard by itself, so it works as a backup
 
 Free Render servers sleep after ~15 min idle; the first visit takes up to a minute. Open the site before you present.
 
+## AI usage limits
+
+The AI chat is the only part that costs money, so `/api/ask` is limited:
+
+| Setting (environment variable) | Default | What it does |
+| --- | --- | --- |
+| `ASK_PER_MINUTE` | 5 | Questions per visitor per minute |
+| `ASK_PER_DAY` | 30 | Questions per visitor per day |
+| `ASK_GLOBAL_PER_DAY` | 150 | Questions per day for the whole site |
+| `ASK_MAX_CHARS` | 500 | Longest question allowed |
+
+The same question about the same habitat reuses the earlier answer for an hour and doesn't count. Counts reset when the server restarts. Set them on Render under **Environment**.
+
+These limits stop spam, but the hard cap on your bill is the **spend limit** in the Claude Console: Settings → Spend limits → Monthly spend limit. When it's reached, the chat says so and the rest of the dashboard keeps working.
+
 ## ESP32 contract
 
 POST JSON to `http://<laptop-ip>:8000/api/reading` about once a second. Every field is optional; send what you have.

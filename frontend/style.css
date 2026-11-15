@@ -319,3 +319,4 @@ footer { padding: 0 40px 40px; font-size: 13px; color: var(--muted); max-width: 
 .as-text { background: none; border: 0; padding: 0; font: inherit; color: var(--prevent); text-decoration: underline; cursor: pointer; }
 .md-actions { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
 .btn-quiet.as-link { background: none; border: 0; text-decoration: underline; cursor: pointer; padding: 0; font: inherit; }
+.msg.bot.limit { border-left-color: var(--muted); color: var(--muted); }

@@ -510,12 +510,21 @@ async function ask(q) {
   document.querySelector(".suggest")?.remove();
   addMsg(q, "user");
   const pending = addMsg("Reading the NASA data…", "bot");
+  let r;
   try {
-    const d = await api("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" },
+    r = await fetch(`${API}/api/ask`, { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question: q, scenario: habitatKey, sensor: followLive }) });
-    pending.innerHTML = renderMarkdown(d.answer);
   } catch {
     pending.textContent = "The server didn’t answer. Check it’s running, then ask again.";
+    return;
+  }
+  const d = await r.json().catch(() => ({}));
+  if (r.ok) {
+    pending.innerHTML = renderMarkdown(d.answer);
+  } else {
+    // Limits and AI errors come back with a plain-language message.
+    pending.classList.add("limit");
+    pending.textContent = typeof d.detail === "string" ? d.detail : "Something went wrong. Try again.";
   }
 }
 $("chat-form").addEventListener("submit", (e) => {
