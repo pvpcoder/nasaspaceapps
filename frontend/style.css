@@ -528,3 +528,6 @@ button, a, select, summary, input[type="checkbox"], .exp-row { touch-action: man
 .gap-takeaway { margin: 0 0 14px; padding: 10px 14px; border-radius: var(--r-sm); background: var(--well); font-size: 15px; line-height: 1.45; }
 .gap-takeaway strong { color: var(--warning); font-weight: 700; }
 #gap-offtop:empty { display: none; }
+
+/* ---------- AI disclosure ---------- */
+.foot .si-note { margin-top: 8px; font-size: 13px; opacity: .8; }

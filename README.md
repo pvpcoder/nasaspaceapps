@@ -89,6 +89,10 @@ uvicorn backend.app:app --host 0.0.0.0 --port 8000
 
 Then open http://localhost:8000. Deployment, the AI usage limits and the sensor box's data format are in [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+## Use of AI
+
+Some of FlameWatch was made with AI, and we want to be clear about which parts. Some of the code (website, backend and data-cleaning scripts), some of the site's text and design elements, and help with debugging came from Anthropic's Claude. Our team came up with the idea, chose what to build, built and wired the sensor box, tested everything against NASA's data and made the final calls. The "Ask about this habitat" assistant on the site also runs on Claude, and it only answers from NASA's data.
+
 ## Sources
 
 - [NASA Physical Sciences Informatics (PSI)](https://psi.nasa.gov). Please cite each experiment's PSI DOI when using the data.
