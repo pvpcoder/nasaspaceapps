@@ -74,7 +74,7 @@ Every number on the dashboard traces back to NASA:
 We'd rather say this plainly than have a judge find it:
 
 - The risk score is a simple, transparent rule of thumb, not a validated fire model.
-- The box's oxygen level comes from a dial, not an oxygen sensor.
+- The box's oxygen level comes from a dial, not an oxygen sensor(based on restraints).
 - The heat trigger is set low (a few degrees of rise) so a warm hand can set it off in a demo. A real system would rely on smoke detection.
 - NASA tests that don't record pressure (BASS, Saffire) are assumed to be at normal cabin pressure.
 - NASA's Saffire-VI burned fabric near Moon base conditions in 2023–24, but those results aren't in PSI yet, so they aren't in our matching.
