@@ -97,4 +97,4 @@ Then open http://localhost:8000. Deployment, the AI usage limits and the sensor 
 - [Urban et al., NASA, 2025: Solid Fuel Ignition Testing for Lunar Applications](https://ntrs.nasa.gov/citations/20250002114)
 - [NASA, 2025: 28.5% oxygen alternate habitat atmosphere](https://ntrs.nasa.gov/citations/20250004535)
 - [NASA Saffire-VI report](https://ntrs.nasa.gov/citations/20240002981)
-- Built with FastAPI, Three.js, Chart.js and Anthropic's Claude API. Hosted on Render.
+- Built with FastAPI, Three.js, Chart.js and is Hosted on Render.
